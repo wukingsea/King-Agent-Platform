@@ -1,0 +1,68 @@
+:root,
+html.dark {
+  color-scheme: dark;
+
+  --king-bg: #070a17;
+  --king-bg-soft: #0a0f20;
+  --king-panel: rgba(15, 21, 41, 0.78);
+  --king-panel-solid: #0f1529;
+  --king-panel-raised: #131b33;
+  --king-line: rgba(255, 255, 255, 0.075);
+  --king-line-strong: rgba(255, 255, 255, 0.13);
+  --king-text: #e9edfb;
+  --king-text-soft: #b7c1dc;
+  --king-muted: #7f8bab;
+  --king-primary: #7c5cff;
+  --king-primary-strong: #6a45ff;
+  --king-cyan: #22d3ee;
+  --king-pink: #ff6ea9;
+  --king-green: #34d399;
+  --king-amber: #fbbf24;
+  --king-red: #fb7185;
+  --king-gradient: linear-gradient(135deg, #8b5cf6 0%, #6d6bff 45%, #22d3ee 100%);
+  --king-gradient-soft: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(34, 211, 238, 0.12));
+  --king-radius: 18px;
+  --king-radius-sm: 12px;
+  --king-shadow: 0 24px 60px rgba(2, 4, 12, 0.45);
+  --king-font: 'Inter', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --king-mono: 'JetBrains Mono', 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+
+  --el-color-primary: #7c5cff;
+  --el-color-primary-light-3: #9b83ff;
+  --el-color-primary-light-5: #b7a6ff;
+  --el-color-primary-light-7: #d3c8ff;
+  --el-color-primary-light-8: #e2dbff;
+  --el-color-primary-light-9: #f1edff;
+  --el-color-primary-dark-2: #6340e0;
+  --el-color-success: #34d399;
+  --el-color-warning: #fbbf24;
+  --el-color-danger: #fb7185;
+  --el-color-info: #8b97b8;
+  --el-bg-color: #0f1529;
+  --el-bg-color-page: #070a17;
+  --el-bg-color-overlay: #131b33;
+  --el-fill-color: rgba(255, 255, 255, 0.055);
+  --el-fill-color-light: rgba(255, 255, 255, 0.045);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
+  --el-fill-color-extra-light: rgba(255, 255, 255, 0.02);
+  --el-fill-color-dark: rgba(255, 255, 255, 0.08);
+  --el-fill-color-darker: rgba(255, 255, 255, 0.12);
+  --el-fill-color-blank: transparent;
+  --el-text-color-primary: #e9edfb;
+  --el-text-color-regular: #b7c1dc;
+  --el-text-color-secondary: #8b97b8;
+  --el-text-color-placeholder: #66718f;
+  --el-text-color-disabled: #4c5674;
+  --el-border-color: rgba(255, 255, 255, 0.1);
+  --el-border-color-light: rgba(255, 255, 255, 0.075);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.055);
+  --el-border-color-extra-light: rgba(255, 255, 255, 0.04);
+  --el-border-color-dark: rgba(255, 255, 255, 0.16);
+  --el-border-color-darker: rgba(255, 255, 255, 0.22);
+  --el-mask-color: rgba(3, 6, 16, 0.72);
+  --el-mask-color-extra-light: rgba(3, 6, 16, 0.4);
+  --el-box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+  --el-box-shadow-light: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+}

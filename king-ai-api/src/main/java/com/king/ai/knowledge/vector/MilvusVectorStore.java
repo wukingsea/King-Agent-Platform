@@ -1,0 +1,235 @@
+package com.king.ai.knowledge.vector;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.king.ai.common.Texts;
+import com.king.ai.config.KingAiProperties;
+import com.king.ai.knowledge.entity.KnowledgeBase;
+import lombok.extern.slf4j.Slf4j;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import java.io.IOException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+
+@Slf4j
+@Component
+@ConditionalOnProperty(prefix = "king-ai", name = "vector-store", havingValue = "milvus", matchIfMissing = true)
+public class MilvusVectorStore implements VectorStore {
+
+    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+    private static final int UPSERT_BATCH = 200;
+
+    private final OkHttpClient httpClient;
+    private final ObjectMapper objectMapper;
+    private final String baseUrl;
+    private final String token;
+    private final Set<String> readyCollections = ConcurrentHashMap.newKeySet();
+
+    public MilvusVectorStore(OkHttpClient httpClient, ObjectMapper objectMapper, KingAiProperties properties) {
+        int timeout = Math.max(5, properties.getMilvus().getTimeoutSeconds());
+        this.httpClient = httpClient.newBuilder()
+                .callTimeout(Duration.ofSeconds(timeout))
+                .build();
+        this.objectMapper = objectMapper;
+        String base = Texts.blankToDefault(properties.getMilvus().getBaseUrl(), "http://localhost:19530").trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (base.endsWith("/v2/vectordb")) {
+            base = base.substring(0, base.length() - "/v2/vectordb".length());
+        }
+        this.baseUrl = base;
+        this.token = properties.getMilvus().getToken();
+    }
+
+    @Override
+    public synchronized void ensureCollection(KnowledgeBase base) {
+        String collection = collectionName(base);
+        if (readyCollections.contains(collection)) {
+            return;
+        }
+        JsonNode describe = post("/v2/vectordb/collections/describe",
+                objectMapper.createObjectNode().put("collectionName", collection), false);
+        if (isSuccess(describe)) {
+            readyCollections.add(collection);
+            return;
+        }
+        int dimension = base.getEmbeddingDim() == null ? 0 : base.getEmbeddingDim();
+        if (dimension <= 0) {
+            throw new VectorStoreException("知识库未配置向量维度");
+        }
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("collectionName", collection);
+        ObjectNode schema = body.putObject("schema");
+        schema.put("autoId", false);
+        schema.put("enabledDynamicField", false);
+        ArrayNode fields = schema.putArray("fields");
+        fields.addObject().put("fieldName", "chunk_id").put("dataType", "Int64").put("isPrimary", true);
+        fields.addObject().put("fieldName", "doc_id").put("dataType", "Int64");
+        fields.addObject().put("fieldName", "space_id").put("dataType", "Int64");
+        fields.addObject().put("fieldName", "kb_id").put("dataType", "Int64");
+        ObjectNode vectorField = fields.addObject();
+        vectorField.put("fieldName", "embedding");
+        vectorField.put("dataType", "FloatVector");
+        vectorField.putObject("elementTypeParams").put("dim", String.valueOf(dimension));
+        ObjectNode index = body.putArray("indexParams").addObject();
+        index.put("fieldName", "embedding");
+        index.put("indexName", "embedding_idx");
+        index.put("metricType", "COSINE");
+        index.putObject("params").put("index_type", "AUTOINDEX").put("metric_type", "COSINE");
+        post("/v2/vectordb/collections/create", body, true);
+        readyCollections.add(collection);
+        log.info("Milvus collection created: {}, dimension={}", collection, dimension);
+    }
+
+    @Override
+    public void upsert(KnowledgeBase base, List<VectorRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        ensureCollection(base);
+        String collection = collectionName(base);
+        for (int start = 0; start < records.size(); start += UPSERT_BATCH) {
+            int end = Math.min(records.size(), start + UPSERT_BATCH);
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("collectionName", collection);
+            ArrayNode data = body.putArray("data");
+            for (int i = start; i < end; i++) {
+                VectorRecord record = records.get(i);
+                ObjectNode item = data.addObject();
+                item.put("chunk_id", record.chunkId());
+                item.put("doc_id", record.docId());
+                item.put("space_id", base.getSpaceId());
+                item.put("kb_id", base.getId());
+                ArrayNode embedding = item.putArray("embedding");
+                for (float value : record.embedding()) {
+                    embedding.add(value);
+                }
+            }
+            post("/v2/vectordb/entities/upsert", body, true);
+        }
+    }
+
+    @Override
+    public void deleteDoc(KnowledgeBase base, Long docId) {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("collectionName", collectionName(base));
+        body.put("filter", "kb_id == " + base.getId() + " && doc_id == " + docId);
+        post("/v2/vectordb/entities/delete", body, false);
+    }
+
+    @Override
+    public void deleteCollection(KnowledgeBase base) {
+        String collection = collectionName(base);
+        ObjectNode body = objectMapper.createObjectNode().put("collectionName", collection);
+        try {
+            post("/v2/vectordb/collections/drop", body, false);
+            readyCollections.remove(collection);
+        } catch (VectorStoreException ex) {
+            log.warn("Failed to drop Milvus collection {}: {}", collection, ex.getMessage());
+        }
+    }
+
+    @Override
+    public List<VectorHit> search(KnowledgeBase base, float[] query, int topK) {
+        String collection = collectionName(base);
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("collectionName", collection);
+        ArrayNode data = body.putArray("data");
+        ArrayNode vector = data.addArray();
+        for (float value : query) {
+            vector.add(value);
+        }
+        body.put("annsField", "embedding");
+        body.put("limit", topK);
+        ArrayNode outputFields = body.putArray("outputFields");
+        outputFields.add("chunk_id");
+        outputFields.add("doc_id");
+        body.put("filter", "kb_id == " + base.getId());
+        JsonNode root;
+        try {
+            root = post("/v2/vectordb/entities/search", body, true);
+        } catch (VectorStoreException ex) {
+            if (ex.getMessage() != null && ex.getMessage().contains("collection not found")) {
+                return List.of();
+            }
+            throw ex;
+        }
+        List<VectorHit> hits = new ArrayList<>();
+        JsonNode dataNode = root.path("data");
+        if (dataNode.isArray()) {
+            for (JsonNode item : dataNode) {
+                long chunkId = item.path("chunk_id").asLong(0);
+                if (chunkId == 0) {
+                    chunkId = item.path("id").asLong(0);
+                }
+                if (chunkId == 0) {
+                    continue;
+                }
+                hits.add(new VectorHit(chunkId, item.path("distance").asDouble(0)));
+            }
+        }
+        hits.sort(Comparator.comparingDouble(VectorHit::score).reversed());
+        return hits;
+    }
+
+    private JsonNode post(String path, ObjectNode body, boolean failOnError) {
+        Request.Builder builder = new Request.Builder()
+                .url(baseUrl + path)
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .post(RequestBody.create(body.toString(), JSON));
+        if (!Texts.isBlank(token)) {
+            builder.header("Authorization", "Bearer " + token.trim());
+        }
+        try (Response response = httpClient.newCall(builder.build()).execute()) {
+            ResponseBody responseBody = response.body();
+            String text = responseBody == null ? "" : responseBody.string();
+            JsonNode root = null;
+            if (!text.isBlank()) {
+                try {
+                    root = objectMapper.readTree(text);
+                } catch (Exception ex) {
+                    if (failOnError) {
+                        throw new VectorStoreException("Milvus 返回了无法解析的响应（HTTP " + response.code() + "）");
+                    }
+                }
+            }
+            if (!response.isSuccessful() || !isSuccess(root)) {
+                if (failOnError) {
+                    String message = root == null ? Texts.oneLine(text, 500)
+                            : Texts.oneLine(root.path("message").asText(root.toString()), 500);
+                    throw new VectorStoreException("Milvus 请求失败（HTTP " + response.code() + "）：" + message);
+                }
+            }
+            return root == null ? objectMapper.createObjectNode() : root;
+        } catch (IOException ex) {
+            throw new VectorStoreException("Milvus 连接失败：" + ex.getMessage(), ex);
+        }
+    }
+
+    private static boolean isSuccess(JsonNode root) {
+        return root != null && root.has("code") && root.path("code").asInt(-1) == 0;
+    }
+
+    private static String collectionName(KnowledgeBase base) {
+        if (Texts.isBlank(base.getVectorCollection())) {
+            throw new VectorStoreException("知识库未配置向量集合");
+        }
+        return base.getVectorCollection().trim();
+    }
+}

@@ -1,0 +1,12 @@
+2026-10-26 15:20:26.898933+08:00 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "flyway_schema_history" not found (this database is empty); SQL statement:
+SELECT version, success FROM flyway_schema_history ORDER BY installed_rank [42104-224]
+2026-10-26 15:20:26.903713+08:00 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "king_ai_agent" not found (this database is empty); SQL statement:
+ SELECT id, name, published_version, allowed_tools, tool_approval_mode, fallback_model_id FROM king_ai_agent [42104-224]
+2026-10-26 15:20:26.906699+08:00 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "king_ai_agent_version" not found (this database is empty); SQL statement:
+ SELECT COUNT(*) AS versions FROM king_ai_agent_version [42104-224]
+2026-10-26 15:20:26.907699+08:00 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "king_ai_knowledge_doc" not found (this database is empty); SQL statement:
+ SELECT COUNT(*) AS docs_with_acl FROM king_ai_knowledge_doc [42104-224]

@@ -1,0 +1,136 @@
+spring:
+  application:
+    name: king-ai
+  profiles:
+    default: local
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+  mvc:
+    async:
+      request-timeout: 600000
+  data:
+    redis:
+      connect-timeout: 2s
+      timeout: 2s
+  flyway:
+    enabled: true
+    clean-disabled: true
+    baseline-on-migrate: true
+
+server:
+  port: 8080
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: application/json,text/html,text/css,application/javascript
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+
+king-ai:
+  app-secret: ${KING_AI_SECRET:king-ai-local-dev-secret-change-me}
+  encryption-key: ${KING_AI_ENCRYPTION_KEY:}
+  previous-encryption-keys: ${KING_AI_PREVIOUS_ENCRYPTION_KEYS:}
+  session-ttl: 7d
+  token-store: redis
+  vector-store: milvus
+  db-type: mysql
+  audit:
+    enabled: ${KING_AI_AUDIT_ENABLED:true}
+    retention-days: ${KING_AI_AUDIT_RETENTION_DAYS:180}
+  chat:
+    max-history-messages: 20
+    max-history-chars: 24000
+    max-input-chars: 10000
+    max-tool-rounds: 6
+    max-tool-result-chars: 8000
+    llm-timeout-seconds: 180
+    max-concurrent-per-space: ${KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE:4}
+  rag:
+    max-context-chars: 8000
+    embedding-batch-size: 16
+    min-score: 0.1
+  index:
+    enabled: true
+    poll-interval-ms: ${KING_AI_INDEX_POLL_INTERVAL_MS:15000}
+    reconcile-interval-ms: 300000
+    batch-size: 10
+    max-attempts: ${KING_AI_INDEX_MAX_ATTEMPTS:5}
+    retry-delay-seconds: 30
+    stale-minutes: 30
+  milvus:
+    base-url: ${MILVUS_URL:http://localhost:19530}
+    token: ${MILVUS_TOKEN:}
+    timeout-seconds: 30
+  demo:
+    enabled: false
+  public-chat:
+    rate-limit-per-minute: 20
+  outbound:
+    block-private-networks: ${KING_AI_BLOCK_PRIVATE_NETWORKS:true}
+    allowed-hosts: ${KING_AI_ALLOWED_OUTBOUND_HOSTS:}
+  security:
+    trust-forwarded-headers: ${KING_AI_TRUST_FORWARDED_HEADERS:false}
+    cookie-secure: ${KING_AI_COOKIE_SECURE:false}
+    session-cookie-name: ${KING_AI_SESSION_COOKIE_NAME:king_session}
+    allowed-origins: ${KING_AI_ALLOWED_ORIGINS:}
+  admin:
+    username: ${KING_AI_ADMIN_USERNAME:}
+    password: ${KING_AI_ADMIN_PASSWORD:}
+    nickname: ${KING_AI_ADMIN_NICKNAME:平台管理员}
+    space-name: ${KING_AI_ADMIN_SPACE_NAME:默认空间}
+    space-code: ${KING_AI_ADMIN_SPACE_CODE:default}
+
+logging:
+  level:
+    root: INFO
+    com.king.ai: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{requestId:-}] [%thread] %logger{40} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      group:
+        liveness:
+          include: livenessState
+        readiness:
+          include: readinessState,db,stateStore
+  health:
+    redis:
+      enabled: false
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: King AI Platform
+    version: "@project.version@"
+
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:true}
+    path: /swagger-ui.html

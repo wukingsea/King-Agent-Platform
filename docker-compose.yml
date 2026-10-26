@@ -1,0 +1,170 @@
+name: king-ai
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-king_ai}
+      MYSQL_USER: ${MYSQL_USER:-king}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      TZ: Asia/Shanghai
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -uroot -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.18
+    restart: unless-stopped
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command:
+      - etcd
+      - --advertise-client-urls=http://etcd:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --data-dir=/etcd
+    volumes:
+      - etcd-data:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    command: ["minio", "server", "/data", "--console-address", ":9001"]
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  milvus:
+    image: milvusdb/milvus:v2.5.4
+    restart: unless-stopped
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?set MINIO_ROOT_USER in .env}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+    volumes:
+      - milvus-data:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 10
+      start_period: 120s
+
+  api:
+    build:
+      context: .
+      dockerfile: king-ai-api/Dockerfile
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: "8080"
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-king_ai}
+      MYSQL_USER: ${MYSQL_USER:-king}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_SSL_MODE: ${MYSQL_SSL_MODE:-REQUIRED}
+      MYSQL_ALLOW_PUBLIC_KEY_RETRIEVAL: ${MYSQL_ALLOW_PUBLIC_KEY_RETRIEVAL:-false}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      REDIS_SSL_ENABLED: ${REDIS_SSL_ENABLED:-false}
+      MILVUS_URL: http://milvus:19530
+      MILVUS_TOKEN: ${MILVUS_TOKEN:-}
+      KING_AI_SECRET: "${KING_AI_SECRET:?set KING_AI_SECRET in .env}"
+      KING_AI_ENCRYPTION_KEY: "${KING_AI_ENCRYPTION_KEY:?set KING_AI_ENCRYPTION_KEY in .env}"
+      KING_AI_PREVIOUS_ENCRYPTION_KEYS: ${KING_AI_PREVIOUS_ENCRYPTION_KEYS:-}
+      KING_AI_ADMIN_USERNAME: ${KING_AI_ADMIN_USERNAME:-admin}
+      KING_AI_ADMIN_PASSWORD: ${KING_AI_ADMIN_PASSWORD:?set KING_AI_ADMIN_PASSWORD in .env}
+      KING_AI_TRUST_FORWARDED_HEADERS: ${KING_AI_TRUST_FORWARDED_HEADERS:-true}
+      KING_AI_COOKIE_SECURE: ${KING_AI_COOKIE_SECURE:-true}
+      KING_AI_ALLOWED_ORIGINS: ${KING_AI_ALLOWED_ORIGINS:-}
+      KING_AI_BLOCK_PRIVATE_NETWORKS: ${KING_AI_BLOCK_PRIVATE_NETWORKS:-true}
+      KING_AI_ALLOWED_OUTBOUND_HOSTS: ${KING_AI_ALLOWED_OUTBOUND_HOSTS:-}
+      KING_AI_DEMO_ENABLED: ${KING_AI_DEMO_ENABLED:-false}
+      PUBLIC_RATE_LIMIT_PER_MINUTE: ${PUBLIC_RATE_LIMIT_PER_MINUTE:-20}
+      KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE: ${KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE:-4}
+      JAVA_OPTS: "${JAVA_OPTS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}"
+      TZ: Asia/Shanghai
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+    ports:
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  ui:
+    build:
+      context: .
+      dockerfile: king-ai-ui/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${UI_PORT:-80}:80"
+
+volumes:
+  mysql-data:
+  redis-data:
+  etcd-data:
+  minio-data:
+  milvus-data:

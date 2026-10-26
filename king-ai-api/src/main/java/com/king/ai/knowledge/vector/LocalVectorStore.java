@@ -1,0 +1,130 @@
+package com.king.ai.knowledge.vector;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.king.ai.knowledge.entity.ChunkVector;
+import com.king.ai.knowledge.entity.KnowledgeBase;
+import com.king.ai.knowledge.mapper.ChunkVectorMapper;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+
+@Slf4j
+@Component
+@RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "king-ai", name = "vector-store", havingValue = "local")
+public class LocalVectorStore implements VectorStore {
+
+    private static final int MAX_SCAN = 20000;
+
+    private final ChunkVectorMapper chunkVectorMapper;
+
+    @Override
+    public void ensureCollection(KnowledgeBase base) {
+    }
+
+    @Override
+    public void upsert(KnowledgeBase base, List<VectorRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        for (VectorRecord record : records) {
+            ChunkVector existing = chunkVectorMapper.selectById(record.chunkId());
+            if (existing == null) {
+                ChunkVector vector = new ChunkVector();
+                vector.setChunkId(record.chunkId());
+                vector.setSpaceId(base.getSpaceId());
+                vector.setKnowledgeBaseId(base.getId());
+                vector.setDocId(record.docId());
+                vector.setEmbedding(encode(record.embedding()));
+                chunkVectorMapper.insert(vector);
+            } else {
+                existing.setEmbedding(encode(record.embedding()));
+                chunkVectorMapper.updateById(existing);
+            }
+        }
+    }
+
+    @Override
+    public void deleteDoc(KnowledgeBase base, Long docId) {
+        chunkVectorMapper.delete(new LambdaQueryWrapper<ChunkVector>()
+                .eq(ChunkVector::getKnowledgeBaseId, base.getId())
+                .eq(ChunkVector::getDocId, docId));
+    }
+
+    @Override
+    public void deleteCollection(KnowledgeBase base) {
+        chunkVectorMapper.delete(new LambdaQueryWrapper<ChunkVector>()
+                .eq(ChunkVector::getKnowledgeBaseId, base.getId()));
+    }
+
+    @Override
+    public List<VectorHit> search(KnowledgeBase base, float[] query, int topK) {
+        List<ChunkVector> vectors = chunkVectorMapper.selectList(new LambdaQueryWrapper<ChunkVector>()
+                .eq(ChunkVector::getKnowledgeBaseId, base.getId()));
+        if (vectors.isEmpty()) {
+            return List.of();
+        }
+        if (vectors.size() > MAX_SCAN) {
+            log.warn("Local vector store scan limited: kbId={}, vectors={}", base.getId(), vectors.size());
+            vectors = vectors.subList(0, MAX_SCAN);
+        }
+        List<VectorHit> hits = new ArrayList<>();
+        for (ChunkVector entity : vectors) {
+            float[] embedding = decode(entity.getEmbedding());
+            if (embedding == null || embedding.length != query.length) {
+                continue;
+            }
+            double score = cosine(query, embedding);
+            if (!Double.isNaN(score)) {
+                hits.add(new VectorHit(entity.getChunkId(), score));
+            }
+        }
+        hits.sort(Comparator.comparingDouble(VectorHit::score).reversed());
+        return hits.size() > topK ? new ArrayList<>(hits.subList(0, topK)) : hits;
+    }
+
+    private static double cosine(float[] left, float[] right) {
+        double dot = 0;
+        double leftNorm = 0;
+        double rightNorm = 0;
+        for (int i = 0; i < left.length; i++) {
+            dot += left[i] * right[i];
+            leftNorm += left[i] * left[i];
+            rightNorm += right[i] * right[i];
+        }
+        double denominator = Math.sqrt(leftNorm) * Math.sqrt(rightNorm);
+        return denominator < 1e-9 ? 0 : dot / denominator;
+    }
+
+    private static String encode(float[] vector) {
+        StringBuilder builder = new StringBuilder(vector.length * 10);
+        for (int i = 0; i < vector.length; i++) {
+            if (i > 0) {
+                builder.append(',');
+            }
+            builder.append(vector[i]);
+        }
+        return builder.toString();
+    }
+
+    private static float[] decode(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String[] parts = value.split(",");
+        float[] vector = new float[parts.length];
+        try {
+            for (int i = 0; i < parts.length; i++) {
+                vector[i] = Float.parseFloat(parts[i]);
+            }
+            return vector;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+}

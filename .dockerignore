@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.idea
+.vscode
+
+**/target
+**/node_modules
+**/dist
+
+king-ai-api/data
+king-ai-api/server.log
+king-ai-ui/vite.log
+
+*.log
+*.sse
+*.tsbuildinfo

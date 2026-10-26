@@ -1,0 +1,548 @@
+export interface ApiResponse<T> {
+  code: number
+  message: string
+  data: T
+}
+
+export interface PageResult<T> {
+  list: T[]
+  total: number
+  page: number
+  size: number
+  totalPages: number
+  hasNext: boolean
+  hasPrevious: boolean
+}
+
+export interface WorkspaceStatsView {
+  agents: number
+  publishedAgents: number
+  knowledgeBases: number
+  documents: number
+  chunks: number
+  sessions: number
+  mcpServers: number
+  skills: number
+  suppliers: number
+  models: number
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface UserView {
+  id: number
+  username: string
+  nickname?: string
+  email?: string
+  role: 'ADMIN' | 'USER' | string
+  status: number
+  spaceIds: number[]
+  mustChangePassword?: number
+  createdAt: string
+}
+
+export type SpaceRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER' | 'AUDITOR'
+
+export interface SpaceView {
+  id: number
+  name: string
+  code: string
+  description?: string
+  status: number
+  role?: SpaceRole
+  createdAt: string
+}
+
+export interface SpaceMemberView {
+  userId: number
+  username: string
+  nickname?: string
+  role: SpaceRole
+}
+
+export interface SpaceMemberUpdate {
+  userId: number
+  role: SpaceRole
+}
+
+export interface AuthResponse {
+  token?: string
+  user: UserView
+  spaces: SpaceView[]
+  currentSpaceId?: number
+}
+
+export interface ChangePasswordRequest {
+  oldPassword: string
+  newPassword: string
+}
+
+export interface AgentView {
+  id: number
+  spaceId: number
+  name: string
+  intro?: string
+  modelId: number
+  modelName: string
+  modelIdentifier: string
+  systemPrompt?: string
+  temperature?: number
+  maxTokens?: number
+  publishStatus: number
+  publishedVersion?: number
+  publicId?: string
+  status: number
+  allowedTools?: string[]
+  toolApprovalMode?: string
+  fallbackModelId?: number | null
+  knowledgeBaseIds: number[]
+  mcpIds: number[]
+  skillIds: number[]
+  createdAt: string
+  updatedAt?: string
+}
+
+export interface AgentVersionView {
+  versionNo: number
+  publishedAt: string
+  publishedBy?: number
+  current: boolean
+}
+
+export interface AgentOption {
+  id: number
+  name: string
+}
+
+export interface AgentSaveRequest {
+  name: string
+  intro?: string
+  modelId: number
+  systemPrompt?: string
+  temperature?: number
+  maxTokens?: number
+  status?: number
+  allowedTools?: string[]
+  toolApprovalMode?: string
+  fallbackModelId?: number | null
+  knowledgeBaseIds?: number[]
+  mcpIds?: number[]
+  skillIds?: number[]
+}
+
+export interface PublicAgentView {
+  publicId: string
+  name: string
+  intro?: string
+}
+
+export interface SupplierView {
+  id: number
+  spaceId: number
+  name: string
+  type: string
+  baseUrl: string
+  apiKeyMasked: string
+  hasApiKey: boolean
+  headersConfigured: boolean
+  status: number
+  remark?: string
+  modelCount: number
+  createdAt: string
+}
+
+export interface SupplierSaveRequest {
+  name: string
+  type: string
+  baseUrl?: string
+  apiKey?: string
+  headers?: string
+  status?: number
+  remark?: string
+}
+
+export interface SupplierTestResult {
+  ok: boolean
+  message: string
+  models: string[]
+}
+
+export interface ModelView {
+  id: number
+  spaceId: number
+  supplierId: number
+  supplierName: string
+  name: string
+  model: string
+  type: 'CHAT' | 'EMBEDDING' | string
+  dimension: number
+  status: number
+  usageCount: number
+  createdAt: string
+}
+
+export interface ModelOption {
+  id: number
+  name: string
+  model: string
+  type: string
+  dimension: number
+  supplierName: string
+}
+
+export interface ModelCreateRequest {
+  supplierId: number
+  name: string
+  model: string
+  type: string
+  dimension?: number
+  status?: number
+}
+
+export interface ModelUpdateRequest {
+  name: string
+  model: string
+  type: string
+  dimension?: number
+  status?: number
+}
+
+export interface ModelImportRequest {
+  models: string[]
+  type?: string
+  dimension?: number
+}
+
+export interface KnowledgeBaseView {
+  id: number
+  spaceId: number
+  name: string
+  description?: string
+  embeddingModelId: number
+  embeddingModelName: string
+  chunkSize: number
+  chunkOverlap: number
+  topK: number
+  vectorCollection: string
+  embeddingDim: number
+  docCount: number
+  chunkCount: number
+  status: number
+  createdAt: string
+}
+
+export interface KnowledgeBaseSaveRequest {
+  name: string
+  description?: string
+  embeddingModelId: number
+  chunkSize?: number
+  chunkOverlap?: number
+  topK?: number
+  status?: number
+}
+
+export interface KnowledgeDocView {
+  id: number
+  knowledgeBaseId: number
+  name: string
+  sourceType: string
+  chunkCount: number
+  status: string
+  errorMessage?: string
+  charCount: number
+  allowedRoles?: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeDocDetail extends KnowledgeDocView {
+  content?: string
+}
+
+export interface KnowledgeChunkView {
+  id: number
+  chunkIndex: number
+  charCount: number
+  content: string
+}
+
+export interface KnowledgeSearchResult {
+  chunkId: number
+  docId: number
+  docName: string
+  chunkIndex: number
+  content: string
+  score: number
+}
+
+export interface KnowledgeDocTextRequest {
+  name: string
+  content: string
+}
+
+export interface McpView {
+  id: number
+  spaceId: number
+  name: string
+  transport?: string
+  url: string
+  headersConfigured: boolean
+  status: number
+  remark?: string
+  agentCount: number
+  createdAt: string
+}
+
+export interface McpSaveRequest {
+  name: string
+  transport?: string
+  url: string
+  headers?: string
+  status?: number
+  remark?: string
+}
+
+export interface McpToolView {
+  name: string
+  description?: string
+}
+
+export interface McpTestResult {
+  ok: boolean
+  message: string
+  tools: McpToolView[]
+}
+
+export interface SkillView {
+  id: number
+  spaceId: number
+  name: string
+  description?: string
+  version?: string
+  status: number
+  fileCount: number
+  createdAt: string
+}
+
+export interface SkillSaveRequest {
+  name: string
+  description?: string
+  version?: string
+  status?: number
+}
+
+export interface SkillFileView {
+  id: number
+  parentId?: number
+  name: string
+  type: number
+  content?: string
+  locked: number
+  sortOrder?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SkillDetail {
+  skill: SkillView
+  files: SkillFileView[]
+}
+
+export interface SkillFileCreateRequest {
+  parentId?: number
+  name: string
+  type?: number
+  content?: string
+  sortOrder?: number
+}
+
+export interface SkillFileUpdateRequest {
+  name?: string
+  content?: string
+  sortOrder?: number
+}
+
+export interface ChatSessionView {
+  id: number
+  agentId: number
+  ownerUserId?: number
+  agentName?: string
+  agentPublicId?: string
+  sourceType: 'ADMIN' | 'PUBLIC' | string
+  visitorId?: string
+  title?: string
+  messageCount: number
+  lastMessageAt?: string
+  createdAt: string
+}
+
+export interface ChatMessageView {
+  id: number
+  sessionId: number
+  role: 'user' | 'assistant' | string
+  content?: string
+  reasoning?: string
+  toolTrace?: ToolTraceItem[] | null
+  citations?: CitationItem[] | null
+  status: string
+  model?: string
+  promptTokens?: number
+  completionTokens?: number
+  durationMs?: number
+  createdAt: string
+}
+
+export interface ChatStopResult {
+  stopped: boolean
+}
+
+export interface ToolTraceItem {
+  id: string
+  name: string
+  source?: string
+  arguments?: string
+  result?: string
+  error?: boolean
+  durationMs?: number
+  running?: boolean
+}
+
+export interface CitationItem {
+  index: number
+  chunkId: number
+  docId: number
+  docName: string
+  knowledgeBaseId: number
+  knowledgeBaseName: string
+  chunkIndex: number
+  score: number
+  snippet: string
+}
+
+export interface ChatMeta {
+  requestId: string
+  sessionId: number
+  agentId: number
+  agentName: string
+  model: string
+  modelName: string
+  sourceType: string
+}
+
+export interface ChatUsage {
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+}
+
+export interface ChatDone {
+  messageId: number
+  sessionId: number
+  status: string
+  durationMs: number
+  stopped: boolean
+  truncated?: boolean
+  error?: string
+}
+
+export interface ToolApprovalEvent {
+  requestId: string
+  callId: string
+  name: string
+  source: string
+  arguments: string
+  expiresInMs: number
+}
+
+export interface ChatRetryEvent {
+  attempt: number
+  reset?: boolean
+  message?: string
+}
+
+export interface ChatDegradedEvent {
+  message?: string
+  model?: string
+}
+
+export interface ToolCallEvent {
+  id: string
+  name: string
+  arguments: string
+  source: string
+}
+
+export interface ToolResultEvent {
+  id: string
+  name: string
+  result: string
+  error: boolean
+  durationMs: number
+}
+
+export interface ChatStreamHandlers {
+  onMeta?: (meta: ChatMeta) => void
+  onCitation?: (citation: CitationItem) => void
+  onReasoning?: (delta: string) => void
+  onContent?: (delta: string) => void
+  onToolCall?: (call: ToolCallEvent) => void
+  onToolResult?: (result: ToolResultEvent) => void
+  onToolApproval?: (approval: ToolApprovalEvent) => void
+  onRetry?: (retry: ChatRetryEvent) => void
+  onDegraded?: (degraded: ChatDegradedEvent) => void
+  onUsage?: (usage: ChatUsage) => void
+  onError?: (message: string) => void
+  onDone?: (done: ChatDone) => void
+}
+
+export interface UserCreateRequest {
+  username: string
+  password: string
+  nickname?: string
+  email?: string
+  role: string
+  status: number
+  spaceIds?: number[]
+}
+
+export interface UserUpdateRequest {
+  nickname?: string
+  email?: string
+  role: string
+  status: number
+  spaceIds?: number[]
+}
+
+export interface UserOption {
+  id: number
+  username: string
+  nickname?: string
+  role: string
+  status: number
+}
+
+export interface SpaceCreateRequest {
+  name: string
+  code: string
+  description?: string
+  status: number
+}
+
+export interface SpaceUpdateRequest {
+  name: string
+  description?: string
+  status: number
+}
+
+export interface HealthStatus {
+  status: string
+  app: string
+  time: string
+}
+
+export interface PublicMeta {
+  demoEnabled: boolean
+}

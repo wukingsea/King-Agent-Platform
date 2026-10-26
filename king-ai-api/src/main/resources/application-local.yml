@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/kingai;MODE=MySQL;DATABASE_TO_LOWER=TRUE;CASE_INSENSITIVE_IDENTIFIERS=TRUE;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  flyway:
+    locations: classpath:db/migration/h2,classpath:db/demo/h2
+
+server:
+  port: 8081
+
+king-ai:
+  token-store: memory
+  vector-store: local
+  db-type: h2
+  demo:
+    enabled: true
+  app-secret: ${KING_AI_SECRET:king-ai-local-dev-secret-change-me}
+  outbound:
+    block-private-networks: ${KING_AI_BLOCK_PRIVATE_NETWORKS:false}
+
+logging:
+  level:
+    com.king.ai: DEBUG
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_ENABLED:true}
+  swagger-ui:
+    enabled: ${SPRINGDOC_ENABLED:true}
