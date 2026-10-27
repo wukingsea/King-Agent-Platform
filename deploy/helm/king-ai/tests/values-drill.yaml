@@ -1,0 +1,42 @@
+# Throwaway drill-only fakes for restore-drill.sh isolated namespace drills.
+api:
+  replicaCount: 0
+  image:
+    repository: king-ai-api
+    tag: drill
+    pullPolicy: IfNotPresent
+ui:
+  replicaCount: 0
+  image:
+    repository: king-ai-ui
+    tag: drill
+    pullPolicy: IfNotPresent
+autoscaling:
+  enabled: false
+pdb:
+  enabled: false
+networkPolicy:
+  enabled: false
+ingress:
+  enabled: false
+migration:
+  enabled: false
+persistence:
+  exports:
+    enabled: true
+    mode: emptyDir
+devDependencies:
+  enabled: true
+  persistence:
+    enabled: false
+  milvus:
+    enabled: true
+  secrets:
+    appSecret: "drill-only-app-secret-0123456789abcdef"
+    encryptionKey: "drill-only-encryption-key-0123456789ab"
+    adminUsername: admin
+    adminPassword: "DrillOnlyPass123456"
+    mysqlPassword: "drillonlymysql"
+    redisPassword: "drillonlyredis"
+    minioUser: "drillonlyminio"
+    minioPassword: "drillonlyminio"
