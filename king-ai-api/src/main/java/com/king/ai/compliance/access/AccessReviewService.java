@@ -17,7 +17,6 @@ import com.king.ai.compliance.dto.AccessReviewView;
 import com.king.ai.config.KingAiProperties;
 import com.king.ai.system.SpaceService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,7 +28,6 @@ import java.util.Objects;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class AccessReviewService {
 
     private static final String STATUS_OPEN = "OPEN";

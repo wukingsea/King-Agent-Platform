@@ -297,6 +297,23 @@ Flyway 迁移只向前执行。回滚应用镜像前必须确认新版本没有�
 - 外部审核返回的类别会归一化到固定白名单（`BLOCKLIST`、`SPAM`、`FLOOD`、`MODERATION_UNAVAILABLE`、`EXTERNAL`），白名单外的值一律记为 `EXTERNAL`（空值记为 `UNKNOWN`），任何自由文本都不会进入审计详情或指标标签。
 - 日志、审计记录、指标标签与 SSE 事件都不包含命中的明文；排障只使用规则 ID、类别与计数（合规 `degraded` 事件仅携带 `reason`、`surface`，以及 `count` 或 `category`；模型降级另有独立的 `degraded` 事件，携带 `message` 与 `model`）。
 
+### 数据保留、法律保留与导出
+
+- 默认关闭保留清理：`KING_AI_RETENTION_ENABLED=false`；首次开启保持 `KING_AI_RETENTION_DRY_RUN=true` 观察一轮。
+- 策略按 `SESSION/MESSAGE/AUDIT/EXPORT` 配置；法律保留优先，清理与过期导出删除都会跳过 active hold。
+- 保留清理开启后，审计日志不再走 `king-ai.audit.retention-days` 的旧清理任务，必须显式配置 `AUDIT` 策略，否则审计日志不会自动清理。
+- 会话清理前默认写 `jsonl.gz` 归档到 `KING_AI_EXPORT_DIR`；归档失败则本轮不删除该批。
+- 导出仅 OWNER/ADMIN，文件 24 小时过期；本地存储路径按空间隔离，禁止路径穿越。
+- 审计动作：`compliance.retention`、`compliance.export`、`compliance.access_review_decide`。
+- 指标：`king.ai.compliance.retention.deleted{type}`、`king.ai.compliance.export.jobs{status}`。
+
+### 访问复核
+
+- 每季度 1 日 04:00 自动生成；也可 `POST /api/compliance/access-reviews` 手动生成。
+- 报告包含成员角色/最近登录、供应商密钥轮换时间、MCP 配置更新时间、公开智能体。
+- 成员可确认/降级/移除；供应商/MCP/公开智能体只能确认或知悉，实际变更到对应模块执行。
+- 降级阶梯：OWNER→ADMIN→EDITOR→VIEWER；AUDITOR→VIEWER；VIEWER 不可再降。
+
 ## 9. 故障排查
 
 ### 启动失败
