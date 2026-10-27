@@ -6,8 +6,7 @@ import com.king.ai.config.KingAiProperties;
 import com.king.ai.knowledge.entity.KnowledgeDoc;
 import com.king.ai.knowledge.entity.KnowledgeIndexJob;
 import com.king.ai.knowledge.mapper.KnowledgeDocMapper;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.Timer;
+import com.king.ai.observability.KnowledgeMetrics;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -24,7 +23,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
@@ -36,7 +34,7 @@ public class KnowledgeIndexWorker {
     private final KnowledgeService knowledgeService;
     private final KnowledgeDocMapper docMapper;
     private final KingAiProperties properties;
-    private final MeterRegistry meterRegistry;
+    private final KnowledgeMetrics metrics;
 
     @Qualifier("embeddingExecutor")
     private final ThreadPoolTaskExecutor embeddingExecutor;
@@ -57,6 +55,7 @@ public class KnowledgeIndexWorker {
             queue.recoverStale(staleBefore());
             reconcileDocs();
             submitDue();
+            refreshQueueMetrics();
         } catch (RuntimeException ex) {
             log.error("Failed to recover knowledge index jobs", ex);
         }
@@ -70,6 +69,7 @@ public class KnowledgeIndexWorker {
         try {
             queue.recoverStale(staleBefore());
             submitDue();
+            refreshQueueMetrics();
         } catch (RuntimeException ex) {
             log.error("Knowledge index poll failed", ex);
         }
@@ -82,6 +82,7 @@ public class KnowledgeIndexWorker {
         }
         try {
             reconcileDocs();
+            refreshQueueMetrics();
         } catch (RuntimeException ex) {
             log.error("Knowledge index reconcile failed", ex);
         }
@@ -165,20 +166,17 @@ public class KnowledgeIndexWorker {
                 }
             }
         } finally {
-            recordMetrics(outcome, System.nanoTime() - startedAt);
+            metrics.indexJob(outcome, System.nanoTime() - startedAt);
         }
     }
 
-    private void recordMetrics(String outcome, long elapsedNanos) {
-        if ("skipped".equals(outcome)) {
-            return;
+    private void refreshQueueMetrics() {
+        try {
+            QueueStats stats = queue.stats();
+            metrics.updateQueue(stats.pending(), stats.failed(), stats.oldestPendingAt());
+        } catch (RuntimeException ex) {
+            log.warn("Failed to refresh knowledge queue metrics: {}", ex.getMessage());
         }
-        meterRegistry.counter("king.ai.index.jobs", "outcome", outcome).increment();
-        Timer.builder("king.ai.index.duration")
-                .description("Knowledge document indexing duration")
-                .tag("outcome", outcome)
-                .register(meterRegistry)
-                .record(elapsedNanos, TimeUnit.NANOSECONDS);
     }
 
     private void reconcileDocs() {

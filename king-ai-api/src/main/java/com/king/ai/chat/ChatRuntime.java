@@ -43,6 +43,7 @@ import com.king.ai.mcp.mapper.McpServerMapper;
 import com.king.ai.model.ModelRuntimeService;
 import com.king.ai.observability.ChatMetrics;
 import com.king.ai.observability.ChatTracing;
+import com.king.ai.observability.KnowledgeMetrics;
 import com.king.ai.skill.SkillService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Span;
@@ -109,6 +110,7 @@ public class ChatRuntime {
     private final MeterRegistry meterRegistry;
     private final ChatTracing tracing;
     private final ChatMetrics chatMetrics;
+    private final KnowledgeMetrics knowledgeMetrics;
 
     private final Map<String, SseEmitter> activeEmitters = new ConcurrentHashMap<>();
 
@@ -763,9 +765,11 @@ public class ChatRuntime {
             List<RetrievedChunk> retrieved = knowledgeService.retrieveForAgent(spaceId, knowledgeBaseIds,
                     query, properties.getRag().getMaxContextChars(),
                     properties.getRag().getMinScore(), role);
+            knowledgeMetrics.ragRetrieval(System.nanoTime() - startedAt, retrieved.isEmpty(), false);
             tracing.tag(span, "rag.hit_count", String.valueOf(retrieved.size()));
             return retrieved;
         } catch (RuntimeException ex) {
+            knowledgeMetrics.ragRetrieval(System.nanoTime() - startedAt, false, true);
             tracing.error(span, ex);
             log.warn("Knowledge retrieval failed: {}", ex.getMessage());
             return List.of();

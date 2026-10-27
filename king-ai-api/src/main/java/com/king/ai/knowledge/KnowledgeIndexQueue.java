@@ -133,4 +133,19 @@ public class KnowledgeIndexQueue {
         mapper.delete(new LambdaQueryWrapper<KnowledgeIndexJob>()
                 .eq(KnowledgeIndexJob::getDocId, docId));
     }
+
+    public QueueStats stats() {
+        Long pending = mapper.selectCount(new LambdaQueryWrapper<KnowledgeIndexJob>()
+                .eq(KnowledgeIndexJob::getStatus, STATUS_PENDING));
+        Long failed = mapper.selectCount(new LambdaQueryWrapper<KnowledgeIndexJob>()
+                .eq(KnowledgeIndexJob::getStatus, STATUS_FAILED));
+        KnowledgeIndexJob oldest = mapper.selectOne(new LambdaQueryWrapper<KnowledgeIndexJob>()
+                .eq(KnowledgeIndexJob::getStatus, STATUS_PENDING)
+                .orderByAsc(KnowledgeIndexJob::getNextRunAt)
+                .last("LIMIT 1"));
+        return new QueueStats(
+                pending == null ? 0L : pending,
+                failed == null ? 0L : failed,
+                oldest == null ? null : oldest.getNextRunAt());
+    }
 }
