@@ -110,8 +110,8 @@ class RetentionJobTest {
         verify(f.audit).recordEvent(eq(1L), eq(0L), eq("SYSTEM"),
                 eq("compliance.retention"), eq("retention"), eq("SESSION"),
                 eq(AuditLogService.STATUS_SUCCESS), contains("deleted=0"), any(), any(), any());
-        assertThat(f.registry.counter(
-                "king.ai.compliance.retention.archive_failed").count()).isEqualTo(1.0);
+        assertThat(f.registry.counter("king.ai.compliance.retention.archive_failed",
+                "type", "SESSION").count()).isEqualTo(1.0);
     }
 
     @Test
@@ -280,6 +280,20 @@ class RetentionJobTest {
         verify(f.audit).recordEvent(eq(1L), eq(0L), eq("SYSTEM"),
                 eq("compliance.retention"), eq("retention"), eq("EXPORT"),
                 eq(AuditLogService.STATUS_SUCCESS), contains("deleted=0"), any(), any(), any());
+    }
+
+    @Test
+    void allHeldBatchDoesNotWriteArchive() throws Exception {
+        Fixture f = new Fixture();
+        f.properties.getCompliance().getRetention().setBatchSize(1);
+        when(f.jdbc.queryForList(any(String.class), any(Object[].class)))
+                .thenReturn(List.of(Map.of("id", 9L)));
+        when(f.holds.isSessionHeld(1L, 9L)).thenReturn(true);
+
+        f.job.purge(1L, policy("SESSION", true), false, 0L);
+
+        verify(f.storage, never()).store(anyLong(), anyString(), any());
+        verify(f.jdbc, never()).update(any(String.class), any(Object[].class));
     }
 
     @Test

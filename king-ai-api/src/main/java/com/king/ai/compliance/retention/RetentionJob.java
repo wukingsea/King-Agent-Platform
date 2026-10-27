@@ -166,7 +166,7 @@ public class RetentionJob {
             storage.store(spaceId, "gz", out -> writeArchive(out, sessionIds, settings));
             return true;
         } catch (IOException | RuntimeException ex) {
-            meterRegistry.counter("king.ai.compliance.retention.archive_failed").increment();
+            count("archive_failed", "SESSION");
             log.warn("保留归档失败：spaceId={}, sessions={}, reason={}",
                     spaceId, sessionIds.size(), ex.getClass().getSimpleName());
             return false;
@@ -378,10 +378,20 @@ public class RetentionJob {
     }
 
     private void warnTruncated(Long spaceId, String type, long lastId) {
-        meterRegistry.counter("king.ai.compliance.retention.truncated",
-                "type", type).increment();
+        count("truncated", type);
         log.warn("保留清理达到单轮批次上限，剩余数据将在下次运行继续：spaceId={}, type={}, lastId={}",
                 spaceId, type, lastId);
+    }
+
+    /** 指标是尽力而为的观测信号，任何注册表异常都不能影响清理结果与审计。 */
+    private void count(String metric, String type) {
+        try {
+            meterRegistry.counter("king.ai.compliance.retention." + metric, "type", type)
+                    .increment();
+        } catch (RuntimeException ex) {
+            log.warn("保留清理指标记录失败：metric={}, type={}, reason={}",
+                    metric, type, ex.getClass().getSimpleName());
+        }
     }
 
     private static String placeholders(int count) {
