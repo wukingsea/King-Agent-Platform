@@ -21,6 +21,7 @@ spec:
         values:
           - api
           - ui
+          - migration
   policyTypes:
     - Ingress
     - Egress
@@ -190,4 +191,49 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "king-ai.migrateName" . }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migration
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "king-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: migration
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.dnsNamespace }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- range .Values.networkPolicy.egress.databaseCidrs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.externalDatabase.port }}
+    {{- end }}
+    {{- if .Values.devDependencies.enabled }}
+    {{- if .Values.devDependencies.mysql.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "king-ai.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: mysql
+      ports:
+        - protocol: TCP
+          port: 3306
+    {{- end }}
+    {{- end }}
 {{- end }}

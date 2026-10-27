@@ -52,6 +52,18 @@ assert_contains 'policyTypes:'
 # Secret: all credentials come from pre-created Secrets (see chart README).
 assert_not_contains "$WORK_DIR/rendered.yaml" 'kind: Secret'
 
+# Task 12 (migration NetworkPolicy fold-in): the default render must contain
+# exactly 4 NetworkPolicy documents (default-deny, api, ui, migration) and the
+# default-deny component list must include migration.
+if [ "$(grep -c 'kind: NetworkPolicy' "$WORK_DIR/rendered.yaml")" != "4" ]; then
+  echo "ASSERT FAILED: default render NetworkPolicy count != 4" >&2
+  exit 1
+fi
+if ! grep -q -- '- migration' "$WORK_DIR/rendered.yaml"; then
+  echo "ASSERT FAILED: default-deny component list missing '- migration'" >&2
+  exit 1
+fi
+
 # With migration disabled and exports on emptyDir neither the Job nor the
 # PVC may render (controller ruling: fold the plan's negative check in here).
 helm template king-ai "$CHART_DIR" --namespace king-ai \
