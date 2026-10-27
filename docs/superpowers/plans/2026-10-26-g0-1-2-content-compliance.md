@@ -2593,7 +2593,7 @@ git commit -m "feat(compliance): expose space compliance settings"
 
 - [ ] **Step 1: 更新部署文档**
 
-在“安全基线”章节追加以下内容：
+在 `docs/DEPLOYMENT.md` 的 `## 8. 安全清单` 末尾追加以下内容（实际环境变量名以 `application.yml` 第 53–63 行的 `${...}` 占位符为准）：
 
 ```markdown
 ### 内容合规与 PII 脱敏
