@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "king-ai.apiName" . }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "king-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      {{- with .Values.api.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "king-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "king-ai.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.api.terminationGracePeriodSeconds }}
+      containers:
+        - name: api
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: {{ include "king-ai.fullname" . }}
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "prod"
+{{- include "king-ai.dbEnv" . | nindent 12 }}
+{{- include "king-ai.redisEnv" . | nindent 12 }}
+{{- include "king-ai.milvusEnv" . | nindent 12 }}
+{{- include "king-ai.appSecretEnv" . | nindent 12 }}
+{{- include "king-ai.adminEnv" . | nindent 12 }}
+          startupProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            failureThreshold: 6
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.persistence.exports.enabled }}
+            - name: exports
+              mountPath: /app/data/exports
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.persistence.exports.enabled }}
+        - name: exports
+          {{- if eq .Values.persistence.exports.mode "pvc" }}
+          persistentVolumeClaim:
+            claimName: {{ include "king-ai.fullname" . }}-exports
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
