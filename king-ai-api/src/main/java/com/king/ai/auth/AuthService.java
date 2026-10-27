@@ -1,5 +1,6 @@
 package com.king.ai.auth;
 
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.king.ai.auth.dto.AuthResponse;
 import com.king.ai.auth.dto.ChangePasswordRequest;
 import com.king.ai.auth.dto.LoginRequest;
@@ -14,11 +15,14 @@ import com.king.ai.system.dto.SpaceView;
 import com.king.ai.system.entity.User;
 import com.king.ai.system.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -42,6 +46,13 @@ public class AuthService {
             throw BizException.forbidden("账号已停用，请联系管理员");
         }
         attemptGuard.success(username, clientIp);
+        try {
+            userMapper.update(null, new LambdaUpdateWrapper<User>()
+                    .eq(User::getId, user.getId())
+                    .set(User::getLastLoginAt, LocalDateTime.now()));
+        } catch (RuntimeException ex) {
+            log.warn("Failed to record last login time: {}", ex.getClass().getSimpleName());
+        }
         String token = Ids.token();
         tokenStore.save(token, user.getId(), properties.getSessionTtl());
         List<SpaceView> spaces = userService.spacesFor(user);

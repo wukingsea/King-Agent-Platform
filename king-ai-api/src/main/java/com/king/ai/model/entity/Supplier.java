@@ -6,6 +6,8 @@ import com.king.ai.system.entity.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("king_ai_supplier")
@@ -16,6 +18,7 @@ public class Supplier extends BaseEntity {
     private String type;
     private String baseUrl;
     private String apiKey;
+    private LocalDateTime apiKeyRotatedAt;
     private String headers;
     private Integer status;
     private String remark;

@@ -25,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -171,9 +172,13 @@ public class SupplierService {
         supplier.setStatus(request.status() == null || request.status() == 0 ? 0 : 1);
         supplier.setRemark(Texts.trimTo(request.remark(), 500));
         if (creating) {
-            supplier.setApiKey(cryptoService.encrypt(Texts.blankToDefault(request.apiKey(), "")));
+            String key = Texts.blankToDefault(request.apiKey(), "");
+            supplier.setApiKey(Texts.isBlank(key) ? "" : cryptoService.encrypt(key));
+            supplier.setApiKeyRotatedAt(Texts.isBlank(key) ? null : LocalDateTime.now());
         } else if (request.apiKey() != null) {
-            supplier.setApiKey(request.apiKey().isBlank() ? "" : cryptoService.encrypt(request.apiKey().trim()));
+            String key = request.apiKey().trim();
+            supplier.setApiKey(Texts.isBlank(key) ? "" : cryptoService.encrypt(key));
+            supplier.setApiKeyRotatedAt(Texts.isBlank(key) ? null : LocalDateTime.now());
         }
     }
 
