@@ -6,11 +6,11 @@ import com.king.ai.common.BizException;
 import com.king.ai.common.Texts;
 import com.king.ai.compliance.retention.ExportJob;
 import com.king.ai.compliance.retention.ExportJobMapper;
-import com.king.ai.compliance.retention.LegalHoldService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -26,7 +26,7 @@ public class ExportJobWorker {
 
     private final ExportJobMapper mapper;
     private final ExportService exportService;
-    private final LegalHoldService legalHoldService;
+    private final JdbcTemplate jdbcTemplate;
 
     @Scheduled(fixedDelayString = "${king-ai.compliance.export.poll-interval-ms:10000}")
     public void poll() {
@@ -35,13 +35,28 @@ public class ExportJobWorker {
                 .orderByAsc(ExportJob::getId)
                 .last("LIMIT 3"));
         for (ExportJob job : jobs) {
+            LocalDateTime now = LocalDateTime.now();
             int claimed = mapper.update(null, new LambdaUpdateWrapper<ExportJob>()
                     .eq(ExportJob::getId, job.getId())
                     .eq(ExportJob::getStatus, ExportStatus.PENDING.name())
                     .set(ExportJob::getStatus, ExportStatus.RUNNING.name())
-                    .set(ExportJob::getUpdatedAt, LocalDateTime.now()));
+                    .set(ExportJob::getStartedAt, now)
+                    .set(ExportJob::getUpdatedAt, now));
             if (claimed == 1) {
-                exportService.execute(job.getId());
+                try {
+                    exportService.execute(job.getId());
+                } catch (RuntimeException ex) {
+                    // One broken job must not abort the batch. Never surface the message: it may
+                    // carry filesystem paths from the storage layer.
+                    log.warn("Export job {} aborted with {}", job.getId(), ex.getClass().getSimpleName());
+                    mapper.update(null, new LambdaUpdateWrapper<ExportJob>()
+                            .eq(ExportJob::getId, job.getId())
+                            .eq(ExportJob::getStatus, ExportStatus.RUNNING.name())
+                            .set(ExportJob::getStatus, ExportStatus.FAILED.name())
+                            .set(ExportJob::getErrorMessage, Texts.oneLine(
+                                    "导出执行失败（" + ex.getClass().getSimpleName() + "）", MAX_REASON_CHARS))
+                            .set(ExportJob::getUpdatedAt, LocalDateTime.now()));
+                }
             }
         }
     }
@@ -57,12 +72,19 @@ public class ExportJobWorker {
 
     @Scheduled(fixedDelay = 3_600_000)
     public void expire() {
-        List<ExportJob> expired = mapper.selectList(new LambdaQueryWrapper<ExportJob>()
-                .eq(ExportJob::getStatus, ExportStatus.COMPLETED.name())
-                .lt(ExportJob::getExpiresAt, LocalDateTime.now())
-                .last("LIMIT 100"));
-        for (ExportJob job : expired) {
-            if (legalHoldService.isHeld(job.getSpaceId(), "EXPORT", job.getId())) {
+        LocalDateTime now = LocalDateTime.now();
+        // Legal-hold filtering happens in SQL: a held job must not consume the LIMIT 100 window
+        // and starve the jobs behind it.
+        List<Long> candidateIds = jdbcTemplate.queryForList(
+                "SELECT e.id FROM king_ai_export_job e WHERE e.status = ? AND e.expires_at IS NOT NULL "
+                        + "AND e.expires_at < ? AND NOT EXISTS (SELECT 1 FROM king_ai_legal_hold h "
+                        + "WHERE h.space_id = e.space_id AND h.resource_type = 'EXPORT' "
+                        + "AND h.resource_id = e.id AND h.released_at IS NULL "
+                        + "AND (h.until IS NULL OR h.until > ?)) ORDER BY e.id LIMIT 100",
+                Long.class, ExportStatus.COMPLETED.name(), now, now);
+        for (Long id : candidateIds) {
+            ExportJob job = mapper.selectById(id);
+            if (job == null) {
                 continue;
             }
             try {

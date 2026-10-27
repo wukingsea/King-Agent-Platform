@@ -142,18 +142,27 @@ public class ExportService {
             throw BizException.notFound("导出文件不存在");
         }
         if (job.getExpiresAt() == null || !job.getExpiresAt().isAfter(LocalDateTime.now())) {
-            throw BizException.conflict("导出文件已过期，请重新生成");
+            // An active EXPORT legal hold outranks the TTL: the evidence must stay retrievable.
+            if (!legalHoldService.isHeld(job.getSpaceId(), "EXPORT", job.getId())) {
+                throw BizException.conflict("导出文件已过期，请重新生成");
+            }
         }
         try {
             return new Download(job.getFileName(), storage.size(spaceId, job.getFilePath()),
                     storage.open(spaceId, job.getFilePath()));
-        } catch (IOException ex) {
+        } catch (IOException | IllegalArgumentException ex) {
             throw BizException.notFound("导出文件不存在");
         }
     }
 
     @Transactional
     public void deleteFile(ExportJob job) {
+        if (!ExportStatus.COMPLETED.name().equals(job.getStatus())) {
+            throw BizException.conflict("导出任务状态不允许删除文件");
+        }
+        if (legalHoldService.isHeld(job.getSpaceId(), "EXPORT", job.getId())) {
+            throw BizException.conflict("导出文件处于法律保留，暂不能删除");
+        }
         try {
             if (job.getFilePath() != null) {
                 storage.delete(job.getSpaceId(), job.getFilePath());
@@ -187,19 +196,21 @@ public class ExportService {
 
     private void writeConversations(ExportJob job, ExportSink sink, RedactionService redaction,
                                     ComplianceSettings settings, long limit) throws IOException {
+        LocalDateTime from = fromOrEpoch(job.getFromAt());
+        LocalDateTime to = toOrMax(job.getToAt());
         List<Long> sessionIds = jdbcTemplate.queryForList(
-                "SELECT id FROM king_ai_chat_session WHERE space_id = ? "
-                        + "AND COALESCE(last_message_at, created_at) >= ? "
-                        + "AND COALESCE(last_message_at, created_at) <= ? "
-                        + "ORDER BY id LIMIT ?",
-                Long.class, job.getSpaceId(), fromOrEpoch(job.getFromAt()), toOrMax(job.getToAt()),
-                limit);
+                "SELECT s.id FROM king_ai_chat_session s WHERE s.space_id = ? "
+                        + "AND EXISTS (SELECT 1 FROM king_ai_chat_message m "
+                        + "WHERE m.session_id = s.id AND m.created_at >= ? AND m.created_at <= ?) "
+                        + "ORDER BY s.id LIMIT ?",
+                Long.class, job.getSpaceId(), from, to, limit);
         for (Long sessionId : sessionIds) {
             if (sink.count() >= limit) {
                 break;
             }
             jdbcTemplate.query("SELECT id, session_id, role, content, status, model, created_at "
-                            + "FROM king_ai_chat_message WHERE session_id = ? ORDER BY id",
+                            + "FROM king_ai_chat_message WHERE session_id = ? "
+                            + "AND created_at >= ? AND created_at <= ? ORDER BY id",
                     rs -> {
                         if (sink.count() >= limit) {
                             return;
@@ -217,7 +228,7 @@ public class ExportService {
                         } catch (IOException ex) {
                             throw new UncheckedIOException(ex);
                         }
-                    }, sessionId);
+                    }, sessionId, from, to);
         }
     }
 
