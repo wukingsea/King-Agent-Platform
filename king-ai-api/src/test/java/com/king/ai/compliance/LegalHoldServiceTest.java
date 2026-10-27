@@ -6,12 +6,19 @@ import com.king.ai.compliance.retention.LegalHoldMapper;
 import com.king.ai.compliance.retention.LegalHoldService;
 import com.king.ai.common.BizException;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class LegalHoldServiceTest {
@@ -52,5 +59,21 @@ class LegalHoldServiceTest {
         assertThatThrownBy(() -> service.release(1L, 3L, 2L))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("已解除");
+    }
+
+    @Test
+    void normalizesResourceTypeBeforeQueryingActiveHolds() {
+        when(jdbcTemplate.queryForList(anyString(), eq(Long.class), any(), any(), any()))
+                .thenReturn(List.of());
+
+        service.activeResourceIds(1L, " audit ");
+
+        ArgumentCaptor<Object[]> varargs = ArgumentCaptor.forClass(Object[].class);
+        verify(jdbcTemplate).queryForList(anyString(), eq(Long.class), varargs.capture());
+        Object[] args = varargs.getValue();
+        assertThat(args).hasSize(3);
+        assertThat(args[0]).isEqualTo(1L);
+        assertThat(args[1]).isEqualTo("AUDIT");
+        assertThat(args[2]).isInstanceOf(LocalDateTime.class);
     }
 }

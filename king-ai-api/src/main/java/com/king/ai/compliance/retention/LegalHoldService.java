@@ -91,10 +91,17 @@ public class LegalHoldService {
                 hold.getReason(), hold.getUntil(), hold.getReleasedAt(), hold.getCreatedAt());
     }
 
+    /**
+     * 判断某个资源是否存在生效中的法律保留；类型会先做 trim + 大写规范化后再精确匹配。
+     * <p>只匹配完全一致的资源类型，{@code SESSION} 保留不会自动扩展到该会话下的消息：
+     * 删除会话请用 {@link #isSessionHeld(Long, Long)}（同时检查属于该会话的 {@code MESSAGE} 保留），
+     * 删除单条消息请用 {@link #isMessageHeld(Long, Long, Long)}（消息保留或其所属会话保留）。
+     */
     public boolean isHeld(Long spaceId, String resourceType, Long resourceId) {
+        String type = normalizeType(resourceType);
         Long count = mapper.selectCount(new LambdaQueryWrapper<LegalHold>()
                 .eq(LegalHold::getSpaceId, spaceId)
-                .eq(LegalHold::getResourceType, resourceType)
+                .eq(LegalHold::getResourceType, type)
                 .eq(LegalHold::getResourceId, resourceId)
                 .isNull(LegalHold::getReleasedAt)
                 .and(w -> w.isNull(LegalHold::getUntil)
@@ -102,6 +109,9 @@ public class LegalHoldService {
         return count != null && count > 0;
     }
 
+    /**
+     * 判断会话是否被保留：命中该会话的 {@code SESSION} 保留，或任一属于该会话的消息存在 {@code MESSAGE} 保留。
+     */
     public boolean isSessionHeld(Long spaceId, Long sessionId) {
         Long count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM king_ai_legal_hold h WHERE h.space_id = ? "
@@ -113,15 +123,26 @@ public class LegalHoldService {
         return count != null && count > 0;
     }
 
+    /**
+     * 判断单条消息是否被保留：消息自身存在 {@code MESSAGE} 保留，或其所属会话存在 {@code SESSION} 保留。
+     */
     public boolean isMessageHeld(Long spaceId, Long messageId, Long sessionId) {
         return isHeld(spaceId, "MESSAGE", messageId) || isHeld(spaceId, "SESSION", sessionId);
     }
 
+    /**
+     * 返回指定类型下所有生效中（未解除且未过期）法律保留的资源 ID；类型会先做 trim + 大写规范化。
+     */
     public Set<Long> activeResourceIds(Long spaceId, String resourceType) {
+        String type = normalizeType(resourceType);
         return Set.copyOf(jdbcTemplate.queryForList(
                 "SELECT resource_id FROM king_ai_legal_hold WHERE space_id = ? "
                         + "AND resource_type = ? AND released_at IS NULL "
                         + "AND (until IS NULL OR until > ?)",
-                Long.class, spaceId, resourceType, LocalDateTime.now()));
+                Long.class, spaceId, type, LocalDateTime.now()));
+    }
+
+    private static String normalizeType(String resourceType) {
+        return resourceType == null ? "" : resourceType.trim().toUpperCase(Locale.ROOT);
     }
 }
