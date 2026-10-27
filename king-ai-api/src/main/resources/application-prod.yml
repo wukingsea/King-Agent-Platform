@@ -68,6 +68,15 @@ management:
   endpoint:
     health:
       show-details: never
+  tracing:
+    enabled: true
+    sampling:
+      probability: ${KING_AI_TRACE_SAMPLE:0.1}
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:http://otel-collector:4318/v1/traces}
+      export:
+        enabled: ${OTEL_TRACING_EXPORT_ENABLED:false}
 
 springdoc:
   api-docs:

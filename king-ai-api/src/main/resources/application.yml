@@ -124,7 +124,7 @@ logging:
     root: INFO
     com.king.ai: INFO
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{requestId:-}] [%thread] %logger{40} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{requestId:-}] [trace=%X{traceId:-} span=%X{spanId:-}] [%thread] %logger{40} - %msg%n"
 
 management:
   endpoints:
@@ -147,6 +147,26 @@ management:
   info:
     env:
       enabled: true
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
+      export:
+        enabled: false
+  metrics:
+    distribution:
+      "percentiles-histogram.[king.ai.chat.ttft]": true
+      "percentiles-histogram.[king.ai.chat.duration]": true
+      "percentiles-histogram.[king.ai.rag.retrieval]": true
+      "percentiles-histogram.[king.ai.mcp.latency]": true
+      "percentiles-histogram.[king.ai.index.duration]": true
+      "percentiles-histogram.[king.ai.milvus.latency]": true
+      "percentiles-histogram.[king.ai.redis.probe.latency]": true
+      "slo.[king.ai.chat.ttft]": 1s,3s,5s,10s
+      "slo.[king.ai.chat.duration]": 5s,15s,30s,60s,180s
 
 info:
   app:
