@@ -23,8 +23,6 @@ import com.king.ai.compliance.retention.LegalHoldService;
 import com.king.ai.compliance.retention.RetentionPolicyService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.core.io.InputStreamResource;
-import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -36,7 +34,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.FilterOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -108,22 +111,88 @@ public class ComplianceController {
 
     @GetMapping("/exports/{id}/download")
     @RequireSpaceRole(SpaceRole.ADMIN)
-    public ResponseEntity<Resource> download(@PathVariable Long id) {
+    public ResponseEntity<StreamingResponseBody> download(@PathVariable Long id) {
         UserPrincipal principal = RequestContext.require();
         Long spaceId = RequestContext.requireSpaceId();
         ExportService.Download download = exportService.openDownload(spaceId, id);
-        // 文件名来自数据库，必须去掉引号/换行等字符，避免响应头注入。
-        String fileName = download.fileName() == null ? "export.bin"
-                : download.fileName().replaceAll("[^A-Za-z0-9._-]", "_");
-        auditLogService.recordEvent(spaceId, principal.id(), principal.username(),
-                "compliance.export_download", "export", String.valueOf(id),
-                AuditLogService.STATUS_SUCCESS, "bytes=" + download.size(), null, null, null);
+        String fileName = safeFileName(download.fileName());
+        StreamingResponseBody body = out -> streamDownload(out, spaceId, id, principal, download);
         return ResponseEntity.ok()
                 .header("Content-Disposition", "attachment; filename=\"" + fileName + "\"")
                 .header("X-Content-Type-Options", "nosniff")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .contentType(downloadMediaType(download.format()))
                 .contentLength(download.size())
-                .body(new InputStreamResource(download.stream()));
+                .body(body);
+    }
+
+    /**
+     * 只有响应体完整写出才记 SUCCESS；读取或写出失败记 FAILURE，避免“审计成功但客户端并未拿到文件”。
+     */
+    private void streamDownload(OutputStream out, Long spaceId, Long id, UserPrincipal principal,
+                                ExportService.Download download) throws IOException {
+        CountingOutputStream counter = new CountingOutputStream(out);
+        try (InputStream in = download.stream()) {
+            in.transferTo(counter);
+            counter.flush();
+            auditDownload(spaceId, id, principal, AuditLogService.STATUS_SUCCESS, counter.count());
+        } catch (IOException | RuntimeException ex) {
+            try {
+                auditDownload(spaceId, id, principal, AuditLogService.STATUS_FAILURE,
+                        counter.count());
+            } catch (RuntimeException auditFailure) {
+                ex.addSuppressed(auditFailure);
+            }
+            throw ex;
+        }
+    }
+
+    private void auditDownload(Long spaceId, Long id, UserPrincipal principal, String status,
+                               long written) {
+        auditLogService.recordEvent(spaceId, principal.id(), principal.username(),
+                "compliance.export_download", "export", String.valueOf(id),
+                status, "bytes=" + written, null, null, null);
+    }
+
+    // 文件名来自数据库，必须去掉引号/换行等字符，避免响应头注入。
+    private static String safeFileName(String fileName) {
+        return fileName == null ? "export.bin"
+                : fileName.replaceAll("[^A-Za-z0-9._-]", "_");
+    }
+
+    private static MediaType downloadMediaType(String format) {
+        return format != null && "CSV".equalsIgnoreCase(format)
+                ? MediaType.parseMediaType("text/csv; charset=UTF-8")
+                : MediaType.APPLICATION_OCTET_STREAM;
+    }
+
+    private static final class CountingOutputStream extends FilterOutputStream {
+
+        private long count;
+
+        private CountingOutputStream(OutputStream out) {
+            super(out);
+        }
+
+        @Override
+        public void write(int b) throws IOException {
+            out.write(b);
+            count++;
+        }
+
+        @Override
+        public void write(byte[] b, int off, int len) throws IOException {
+            out.write(b, off, len);
+            count += len;
+        }
+
+        @Override
+        public void flush() throws IOException {
+            out.flush();
+        }
+
+        private long count() {
+            return count;
+        }
     }
 
     @GetMapping("/access-reviews")

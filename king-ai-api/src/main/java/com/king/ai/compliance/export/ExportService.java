@@ -58,7 +58,7 @@ public class ExportService {
     private final RedactionService redactionService;
     private final ComplianceSettingsService complianceSettingsService;
 
-    public record Download(String fileName, long size, InputStream stream) {
+    public record Download(String fileName, String format, long size, InputStream stream) {
     }
 
     @Transactional
@@ -148,7 +148,8 @@ public class ExportService {
             }
         }
         try {
-            return new Download(job.getFileName(), storage.size(spaceId, job.getFilePath()),
+            return new Download(job.getFileName(), job.getFormat(),
+                    storage.size(spaceId, job.getFilePath()),
                     storage.open(spaceId, job.getFilePath()));
         } catch (IOException | IllegalArgumentException ex) {
             throw BizException.notFound("导出文件不存在");

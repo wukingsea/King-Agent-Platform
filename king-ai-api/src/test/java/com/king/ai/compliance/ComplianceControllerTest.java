@@ -4,7 +4,10 @@ import com.king.ai.audit.AuditLogService;
 import com.king.ai.common.BizException;
 import com.king.ai.common.PageResult;
 import com.king.ai.common.security.RequestContext;
+import com.king.ai.common.security.RequireSpaceRole;
+import com.king.ai.common.security.SpaceRole;
 import com.king.ai.common.security.UserPrincipal;
+import com.king.ai.compliance.access.AccessReviewScheduler;
 import com.king.ai.compliance.access.AccessReviewService;
 import com.king.ai.compliance.dto.AccessReviewDecisionRequest;
 import com.king.ai.compliance.dto.AccessReviewItemView;
@@ -20,14 +23,25 @@ import com.king.ai.compliance.retention.LegalHoldService;
 import com.king.ai.compliance.retention.RetentionPolicyService;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
-import org.springframework.core.io.Resource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -159,14 +173,17 @@ class ComplianceControllerTest {
     }
 
     @Test
-    void downloadSanitizesFileNameAndAuditsSizeOnly() {
+    void downloadSanitizesFileNameSetsCsvCharsetAndAuditsBytesWritten() throws Exception {
         Fixture f = new Fixture();
         when(f.exportService.openDownload(SPACE, 9L)).thenReturn(new ExportService.Download(
-                "../../evil\r\nX: y.csv", 12L, new ByteArrayInputStream(new byte[]{1, 2, 3})));
+                "../../evil\r\nX: y.csv", "CSV", 12L,
+                new ByteArrayInputStream(new byte[]{1, 2, 3})));
         RequestContext.set(member(42L, "ADMIN"));
-        ResponseEntity<Resource> response;
+        ResponseEntity<StreamingResponseBody> response;
+        byte[] body;
         try {
             response = f.controller.download(9L);
+            body = write(response);
         } finally {
             RequestContext.clear();
         }
@@ -178,30 +195,73 @@ class ComplianceControllerTest {
                 .doesNotContain("\n");
         assertThat(response.getHeaders().getFirst("X-Content-Type-Options")).isEqualTo("nosniff");
         assertThat(response.getHeaders().getContentType())
-                .isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
+                .isEqualTo(MediaType.parseMediaType("text/csv; charset=UTF-8"));
         assertThat(response.getHeaders().getContentLength()).isEqualTo(12L);
-        assertThat(response.getBody()).isNotNull();
+        assertThat(body).containsExactly(1, 2, 3);
         verify(f.auditLogService).recordEvent(SPACE, 42L, "user42",
                 "compliance.export_download", "export", "9", AuditLogService.STATUS_SUCCESS,
-                "bytes=12", null, null, null);
+                "bytes=3", null, null, null);
     }
 
     @Test
-    void downloadFallsBackToExportBinWhenFileNameMissing() {
+    void downloadFallsBackToExportBinAndOctetStreamWhenFormatMissing() throws Exception {
         Fixture f = new Fixture();
         when(f.exportService.openDownload(SPACE, 9L)).thenReturn(new ExportService.Download(
-                null, 5L, new ByteArrayInputStream(new byte[]{1})));
+                null, null, 5L, new ByteArrayInputStream(new byte[]{1})));
         RequestContext.set(member(42L, "ADMIN"));
+        ResponseEntity<StreamingResponseBody> response;
         try {
-            ResponseEntity<Resource> response = f.controller.download(9L);
-            assertThat(response.getHeaders().getFirst("Content-Disposition"))
-                    .isEqualTo("attachment; filename=\"export.bin\"");
+            response = f.controller.download(9L);
+            assertThat(write(response)).containsExactly(1);
+        } finally {
+            RequestContext.clear();
+        }
+        assertThat(response.getHeaders().getContentType())
+                .isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
+        assertThat(response.getHeaders().getFirst("Content-Disposition"))
+                .isEqualTo("attachment; filename=\"export.bin\"");
+        verify(f.auditLogService).recordEvent(SPACE, 42L, "user42",
+                "compliance.export_download", "export", "9", AuditLogService.STATUS_SUCCESS,
+                "bytes=1", null, null, null);
+    }
+
+    @Test
+    void downloadAuditsFailureOnlyAfterBodyStreamFails() throws Exception {
+        Fixture f = new Fixture();
+        when(f.exportService.openDownload(SPACE, 9L)).thenReturn(new ExportService.Download(
+                "audit.csv", "CSV", 100L, new InputStream() {
+                    private int remaining = 2;
+
+                    @Override
+                    public int read() throws IOException {
+                        byte[] one = new byte[1];
+                        int n = read(one, 0, 1);
+                        return n < 0 ? -1 : one[0] & 0xff;
+                    }
+
+                    @Override
+                    public int read(byte[] buffer, int offset, int length) throws IOException {
+                        if (remaining > 0) {
+                            remaining--;
+                            buffer[offset] = 65;
+                            return 1;
+                        }
+                        throw new IOException("client disconnected");
+                    }
+                }));
+        RequestContext.set(member(42L, "ADMIN"));
+        ResponseEntity<StreamingResponseBody> response;
+        try {
+            response = f.controller.download(9L);
+            assertThatThrownBy(() -> write(response))
+                    .isInstanceOf(IOException.class)
+                    .hasMessageContaining("client disconnected");
         } finally {
             RequestContext.clear();
         }
         verify(f.auditLogService).recordEvent(SPACE, 42L, "user42",
-                "compliance.export_download", "export", "9", AuditLogService.STATUS_SUCCESS,
-                "bytes=5", null, null, null);
+                "compliance.export_download", "export", "9", AuditLogService.STATUS_FAILURE,
+                "bytes=2", null, null, null);
     }
 
     @Test
@@ -312,12 +372,14 @@ class ComplianceControllerTest {
             Fixture f = new Fixture();
             RequestContext.set(member(42L, role));
             try {
+                assertForbidden(f.controller::legalHolds, role + " legal holds");
                 assertForbidden(f.controller::accessReviews, role + " list");
                 assertForbidden(() -> f.controller.accessReview(5L), role + " get");
                 assertForbidden(() -> f.controller.exportReview(5L), role + " csv");
             } finally {
                 RequestContext.clear();
             }
+            verify(f.legalHoldService, never()).list(anyLong());
             verify(f.accessReviewService, never()).list(anyLong());
             verify(f.accessReviewService, never()).get(anyLong(), anyLong());
             verify(f.accessReviewService, never()).csv(anyLong(), anyLong(), any());
@@ -369,6 +431,88 @@ class ComplianceControllerTest {
         }
         verifyNoInteractions(f.retentionService, f.legalHoldService, f.exportService,
                 f.accessReviewService);
+    }
+
+    @Test
+    void declaresExpectedEndpointsAndExactRoles() {
+        assertThat(ComplianceController.class.getAnnotation(RequestMapping.class).value())
+                .containsExactly("/api/compliance");
+        assertGet("retentionPolicies", "/retention-policies", SpaceRole.VIEWER);
+        assertPut("upsertRetentionPolicy", "/retention-policies", SpaceRole.ADMIN);
+        assertGet("legalHolds", "/legal-holds", SpaceRole.ADMIN, SpaceRole.AUDITOR);
+        assertPost("createLegalHold", "/legal-holds", SpaceRole.ADMIN);
+        assertDelete("releaseLegalHold", "/legal-holds/{id}", SpaceRole.ADMIN);
+        assertGet("exports", "/exports", SpaceRole.ADMIN);
+        assertPost("createExport", "/exports", SpaceRole.ADMIN);
+        assertGet("download", "/exports/{id}/download", SpaceRole.ADMIN);
+        assertGet("accessReviews", "/access-reviews", SpaceRole.ADMIN, SpaceRole.AUDITOR);
+        assertPost("generateAccessReview", "/access-reviews", SpaceRole.ADMIN);
+        assertGet("accessReview", "/access-reviews/{id}", SpaceRole.ADMIN, SpaceRole.AUDITOR);
+        assertPost("decide", "/access-reviews/{id}/items/{itemId}/decision", SpaceRole.ADMIN);
+        assertGet("exportReview", "/access-reviews/{id}/export.csv",
+                SpaceRole.ADMIN, SpaceRole.AUDITOR);
+    }
+
+    @Test
+    void schedulerUsesQuarterlyCronProperty() throws Exception {
+        Method quarterly = AccessReviewScheduler.class.getMethod("quarterly");
+        Scheduled scheduled = quarterly.getAnnotation(Scheduled.class);
+        assertThat(scheduled).isNotNull();
+        assertThat(scheduled.cron())
+                .isEqualTo("${king-ai.compliance.access-review.cron:0 0 4 1 1,4,7,10 *}");
+    }
+
+    private static void assertGet(String method, String path, SpaceRole... roles) {
+        Method target = findMethod(method);
+        GetMapping mapping = target.getAnnotation(GetMapping.class);
+        assertThat(mapping).as(method).isNotNull();
+        assertThat(mapping.value()).as(method).containsExactly(path);
+        assertRoles(target, roles);
+    }
+
+    private static void assertPut(String method, String path, SpaceRole... roles) {
+        Method target = findMethod(method);
+        PutMapping mapping = target.getAnnotation(PutMapping.class);
+        assertThat(mapping).as(method).isNotNull();
+        assertThat(mapping.value()).as(method).containsExactly(path);
+        assertRoles(target, roles);
+    }
+
+    private static void assertPost(String method, String path, SpaceRole... roles) {
+        Method target = findMethod(method);
+        PostMapping mapping = target.getAnnotation(PostMapping.class);
+        assertThat(mapping).as(method).isNotNull();
+        assertThat(mapping.value()).as(method).containsExactly(path);
+        assertRoles(target, roles);
+    }
+
+    private static void assertDelete(String method, String path, SpaceRole... roles) {
+        Method target = findMethod(method);
+        DeleteMapping mapping = target.getAnnotation(DeleteMapping.class);
+        assertThat(mapping).as(method).isNotNull();
+        assertThat(mapping.value()).as(method).containsExactly(path);
+        assertRoles(target, roles);
+    }
+
+    private static void assertRoles(Method target, SpaceRole... roles) {
+        RequireSpaceRole annotation = target.getAnnotation(RequireSpaceRole.class);
+        assertThat(annotation).as(target.getName()).isNotNull();
+        assertThat(annotation.value()).as(target.getName())
+                .containsExactlyInAnyOrder(roles);
+    }
+
+    private static Method findMethod(String name) {
+        List<Method> matches = Arrays.stream(ComplianceController.class.getDeclaredMethods())
+                .filter(method -> method.getName().equals(name))
+                .toList();
+        assertThat(matches).as(name).hasSize(1);
+        return matches.get(0);
+    }
+
+    private static byte[] write(ResponseEntity<StreamingResponseBody> response) throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        response.getBody().writeTo(out);
+        return out.toByteArray();
     }
 
     private static void assertForbidden(ThrowingCallable call, String description) {

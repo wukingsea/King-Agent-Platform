@@ -96,6 +96,7 @@ class ExportServiceTest {
         job.setId(9L);
         job.setSpaceId(1L);
         job.setStatus("COMPLETED");
+        job.setFormat("JSONL");
         job.setFileName("king-ai-conversations-9.jsonl");
         job.setFilePath("1/export.jsonl");
         job.setExpiresAt(LocalDateTime.now().minusHours(1));
@@ -108,6 +109,7 @@ class ExportServiceTest {
         ExportService.Download download = service.openDownload(1L, 9L);
 
         assertThat(download.fileName()).isEqualTo("king-ai-conversations-9.jsonl");
+        assertThat(download.format()).isEqualTo("JSONL");
         assertThat(download.size()).isEqualTo(3L);
         assertThat(download.stream()).isSameAs(stream);
     }
