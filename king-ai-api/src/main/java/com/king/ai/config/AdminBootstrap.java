@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.dao.DuplicateKeyException;
@@ -25,6 +26,7 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Component
+@Profile("!migrate")
 @RequiredArgsConstructor
 public class AdminBootstrap implements ApplicationRunner {
 
