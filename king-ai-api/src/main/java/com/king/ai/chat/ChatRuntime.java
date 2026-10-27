@@ -41,10 +41,13 @@ import com.king.ai.mcp.McpService;
 import com.king.ai.mcp.entity.McpServer;
 import com.king.ai.mcp.mapper.McpServerMapper;
 import com.king.ai.model.ModelRuntimeService;
+import com.king.ai.observability.ChatTracing;
 import com.king.ai.skill.SkillService;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import io.micrometer.tracing.Span;
+import io.micrometer.tracing.Tracer;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -106,6 +109,7 @@ public class ChatRuntime {
     private final ObjectMapper objectMapper;
     private final KingAiProperties properties;
     private final MeterRegistry meterRegistry;
+    private final ChatTracing tracing;
 
     private final AtomicInteger activeChats = new AtomicInteger();
     private final Map<String, SseEmitter> activeEmitters = new ConcurrentHashMap<>();
@@ -205,11 +209,18 @@ public class ChatRuntime {
         });
         Map<String, String> mdcContext = MDC.getCopyOfContextMap();
         ChatAuditContext auditContext = captureAuditContext();
+        Span chatSpan = tracing.start("chat.request");
+        tracing.tag(chatSpan, "chat.source", sourceTag(sourceType));
+        tracing.tag(chatSpan, "chat.space_id", String.valueOf(spaceId));
+        tracing.tag(chatSpan, "gen_ai.agent.id", String.valueOf(agent.agentId()));
+        tracing.tag(chatSpan, "gen_ai.request.model", resolved.model().getModel());
         try {
             chatExecutor.execute(() -> run(emitter, requestId, token, actor, agent, resolved,
                     sessionId, safeMessage, sourceType, locked, mdcContext, auditContext,
-                    compliance, publicChat, prepared.redactedCount(), prepared.masked()));
+                    compliance, publicChat, prepared.redactedCount(), prepared.masked(), chatSpan));
         } catch (RuntimeException ex) {
+            tracing.error(chatSpan, ex);
+            tracing.end(chatSpan);
             activeEmitters.remove(requestId);
             cancellationRegistry.remove(requestId);
             token.cancel();
@@ -241,12 +252,13 @@ public class ChatRuntime {
                      Long sessionId, String message, String sourceType, boolean locked,
                      Map<String, String> mdcContext, ChatAuditContext auditContext,
                      ComplianceSettings compliance, boolean publicChat,
-                     int inputRedactions, boolean inputMasked) {
+                     int inputRedactions, boolean inputMasked, Span chatSpan) {
         if (mdcContext != null && !mdcContext.isEmpty()) {
             MDC.setContextMap(mdcContext);
         }
         MDC.put(RequestIdFilter.MDC_KEY, requestId);
         Long spaceId = actor.spaceId();
+        MDC.put("spaceId", spaceId == null ? "-" : String.valueOf(spaceId));
         long startedAt = System.currentTimeMillis();
         activeChats.incrementAndGet();
         ChatSession session = null;
@@ -271,6 +283,7 @@ public class ChatRuntime {
                 moderationService, compliance,
                 new ModerationContext(spaceId, publicChat, "reasoning"), publicChat);
 
+        Tracer.SpanInScope spanScope = tracing.openScope(chatSpan);
         try {
             session = chatService.ensureSession(actor, agent.agentId(), sourceType, sessionId, message);
             List<LlmMessage> history = chatService.history(session.getId());
@@ -343,8 +356,25 @@ public class ChatRuntime {
                     send(emitter, "tool_call", callPayload);
 
                     long toolStart = System.currentTimeMillis();
-                    ToolOutcome outcome = executeTool(tool, call, spaceId, actor, agent.toolApprovalMode(),
-                            emitter, requestId, token, toolArguments);
+                    Span toolSpan = tool != null && tool.kind() == ToolKind.MCP
+                            ? tracing.start("mcp.tool.call") : null;
+                    if (toolSpan != null) {
+                        tracing.tag(toolSpan, "mcp.server", tool.server() == null ? null : tool.server().getName());
+                        tracing.tag(toolSpan, "mcp.tool", tool.remoteName());
+                    }
+                    ToolOutcome outcome;
+                    try {
+                        outcome = executeTool(tool, call, spaceId, actor, agent.toolApprovalMode(),
+                                emitter, requestId, token, toolArguments);
+                        if (toolSpan != null) {
+                            tracing.tag(toolSpan, "mcp.result", outcome.error() ? "error" : "success");
+                        }
+                    } catch (RuntimeException ex) {
+                        tracing.error(toolSpan, ex);
+                        throw ex;
+                    } finally {
+                        tracing.end(toolSpan);
+                    }
                     String toolText = outcome.text();
                     RedactionResult toolRedaction = redactionService.redact(toolText, compliance);
                     toolText = toolRedaction.text();
@@ -424,6 +454,7 @@ public class ChatRuntime {
                     "action", "block", "category", boundedCategory(ex.category())).increment();
             sendQuietly(emitter, "error", Map.of("message", errorMessage));
         } catch (Throwable ex) {
+            tracing.error(chatSpan, ex);
             if (token.isCancelled()) {
                 status = ChatService.STATUS_STOPPED;
             } else {
@@ -435,6 +466,10 @@ public class ChatRuntime {
             }
         } finally {
             long duration = System.currentTimeMillis() - startedAt;
+            tracing.tag(chatSpan, "chat.status", status);
+            tracing.tag(chatSpan, "chat.duration_ms", String.valueOf(duration));
+            tracing.tag(chatSpan, "gen_ai.usage.prompt_tokens", String.valueOf(promptTokens));
+            tracing.tag(chatSpan, "gen_ai.usage.completion_tokens", String.valueOf(completionTokens));
             Map<String, Integer> redactions = new java.util.LinkedHashMap<>();
             redactions.putAll(contentGuard.countsByCategory());
             reasoningGuard.countsByCategory().forEach((key, value) ->
@@ -447,22 +482,32 @@ public class ChatRuntime {
                         "surface", "output",
                         "count", redactions.values().stream().mapToInt(Integer::intValue).sum()));
             }
-            if (assistant != null) {
-                try {
-                    chatService.finishAssistant(assistant.getId(), content.toString(), reasoning.toString(),
-                            toolTraceJson(trace), citationsJson(citations), status,
-                            resolved.model().getModel(), promptTokens, completionTokens, duration);
-                } catch (RuntimeException ex) {
-                    log.error("Failed to persist assistant message {}", assistant.getId(), ex);
+            Span persistSpan = tracing.start("chat.persist");
+            tracing.tag(persistSpan, "chat.message_id",
+                    assistant == null ? null : String.valueOf(assistant.getId()));
+            tracing.tag(persistSpan, "chat.status", status);
+            try {
+                if (assistant != null) {
+                    try {
+                        chatService.finishAssistant(assistant.getId(), content.toString(), reasoning.toString(),
+                                toolTraceJson(trace), citationsJson(citations), status,
+                                resolved.model().getModel(), promptTokens, completionTokens, duration);
+                    } catch (RuntimeException ex) {
+                        tracing.error(persistSpan, ex);
+                        log.error("Failed to persist assistant message {}", assistant.getId(), ex);
+                    }
                 }
-            }
-            if (session != null) {
-                try {
-                    chatService.touchSession(session.getId(),
-                            (userSaved ? 1 : 0) + (assistant != null ? 1 : 0));
-                } catch (RuntimeException ex) {
-                    log.warn("Failed to update chat session {}: {}", session.getId(), ex.getMessage());
+                if (session != null) {
+                    try {
+                        chatService.touchSession(session.getId(),
+                                (userSaved ? 1 : 0) + (assistant != null ? 1 : 0));
+                    } catch (RuntimeException ex) {
+                        tracing.error(persistSpan, ex);
+                        log.warn("Failed to update chat session {}: {}", session.getId(), ex.getMessage());
+                    }
                 }
+            } finally {
+                tracing.end(persistSpan);
             }
             if (assistant != null) {
                 sendQuietly(emitter, "usage", usagePayload(promptTokens, completionTokens));
@@ -501,6 +546,8 @@ public class ChatRuntime {
             recordChatMetrics(sourceType, status, duration, promptTokens, completionTokens,
                     resolved.model().getModel());
             MDC.clear();
+            spanScope.close();
+            tracing.end(chatSpan);
         }
     }
 
@@ -582,6 +629,9 @@ public class ChatRuntime {
         LlmException lastException = null;
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
             token.throwIfCancelled();
+            Span llmSpan = tracing.start("llm.chat");
+            tracing.tag(llmSpan, "gen_ai.request.model", resolved.model().getModel());
+            tracing.tag(llmSpan, "llm.attempt", String.valueOf(attempt + 1));
             int contentMark = content.length();
             int reasoningMark = reasoning.length();
             // 失败重试必须恢复到本次尝试前的安全带状态：直接 reset 会丢掉上一轮工具调用
@@ -623,8 +673,12 @@ public class ChatRuntime {
                             }
                         }, token);
                 circuitBreaker.success(breakerKey);
+                tracing.tag(llmSpan, "gen_ai.response.finish_reasons", result.finishReason());
+                tracing.tag(llmSpan, "gen_ai.usage.prompt_tokens", String.valueOf(result.promptTokens()));
+                tracing.tag(llmSpan, "gen_ai.usage.completion_tokens", String.valueOf(result.completionTokens()));
                 return result;
             } catch (LlmException ex) {
+                tracing.error(llmSpan, ex);
                 lastException = ex;
                 circuitBreaker.failure(breakerKey);
                 if (attempt < maxRetries && isTransientError(ex)) {
@@ -646,6 +700,8 @@ public class ChatRuntime {
                     continue;
                 }
                 throw ex;
+            } finally {
+                tracing.end(llmSpan);
             }
         }
         throw lastException != null ? lastException : new LlmException("LLM 请求失败");
@@ -729,12 +785,22 @@ public class ChatRuntime {
         if (knowledgeBaseIds == null || knowledgeBaseIds.isEmpty()) {
             return List.of();
         }
+        long startedAt = System.nanoTime();
+        Span span = tracing.start("rag.retrieve");
+        tracing.tag(span, "rag.knowledge_base_count", String.valueOf(knowledgeBaseIds.size()));
+        tracing.tag(span, "rag.role", role);
         try {
-            return knowledgeService.retrieveForAgent(spaceId, knowledgeBaseIds, query,
-                    properties.getRag().getMaxContextChars(), properties.getRag().getMinScore(), role);
+            List<RetrievedChunk> retrieved = knowledgeService.retrieveForAgent(spaceId, knowledgeBaseIds,
+                    query, properties.getRag().getMaxContextChars(),
+                    properties.getRag().getMinScore(), role);
+            tracing.tag(span, "rag.hit_count", String.valueOf(retrieved.size()));
+            return retrieved;
         } catch (RuntimeException ex) {
+            tracing.error(span, ex);
             log.warn("Knowledge retrieval failed: {}", ex.getMessage());
             return List.of();
+        } finally {
+            tracing.end(span);
         }
     }
 
