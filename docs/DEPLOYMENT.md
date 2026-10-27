@@ -284,6 +284,20 @@ Flyway 迁移只向前执行。回滚应用镜像前必须确认新版本没有�
 - 生产关闭 `KING_AI_DEMO_ENABLED`，不要保留演示智能体、Mock 供应商或演示 MCP。
 - 定期执行依赖与镜像扫描；CI 会执行后端测试、前端构建、Trivy 漏洞/密钥/配置扫描并产出 SBOM。
 
+### 内容合规与 PII 脱敏
+
+- 空间管理员通过 `GET/PUT /api/compliance-settings` 配置 PII 开关、审核模式与动作、违禁词和自定义 PII 正则；两个接口都要求空间 `ADMIN` 角色，平台管理员自动通过。未配置的空间使用下方环境变量默认值，审核动作默认为 `BLOCK`。
+- PII 默认开启，可用 `KING_AI_PII_DEFAULT_ENABLED`（默认 `true`）关闭。内置规则覆盖邮箱、手机号、身份证、银行卡（Luhn 校验）、API Key、Bearer Token 与 IPv4；自定义正则上限固定为 20 条（`king-ai.compliance.pii.max-custom-rules`，`application.yml` 未提供环境变量占位符，需要时用 Spring 属性覆盖）。
+- 审核模式由 `KING_AI_MODERATION_MODE`（默认 `OFF`）设置，可选 `OFF`/`LOCAL`/`EXTERNAL`/`HYBRID`；生产公开对话建议 `LOCAL` 或 `HYBRID`。
+- 外部审核通过 `KING_AI_MODERATION_URL` 与 `KING_AI_MODERATION_TOKEN` 配置。输入、输出和工具结果都会先在本地完成 PII 脱敏再送审，因此明文不会经审核服务离开部署边界。URL 缺失、出站地址被策略拦截、超时（`KING_AI_MODERATION_TIMEOUT_MS`，默认 `2000`）或任何提供方异常都会降级为本地规则；公开对话在审核不可用时 fail-closed（`KING_AI_MODERATION_FAIL_CLOSED` 默认 `true`）。
+- 流式脱敏安全带由 `KING_AI_PII_STREAM_HOLDBACK` 控制，默认 128，运行时限制在 32–1024。它只保证长度不超过该值的敏感串在跨 delta 时不被拆开；自定义正则若可能匹配更长的串，必须同步调大该值，否则长敏感串跨 delta 时存在漏检窗口。这是刻意的性能/合规折中，整段缓冲输出模式留待后续版本。
+- Fail-closed 上限：输入或输出文本一旦超过 200,000 字符，脱敏引擎会整段替换为 `[REDACTED:OVERSIZE]`（对话输入在更早的 `max-input-chars` 校验处就会被拒绝）；保存自定义正则时，包含无界嵌套量词的模式（如 `(a+)+`）会被拒绝，历史遗留的同类模式会让整段消息返回 `[REDACTED:REGEX_LIMIT]`，原消息不会放行。
+- 审计动作：`chat.moderation_blocked`（输入/输出，显式写入）与 `compliance_setting.update`（由请求审计拦截器根据控制器名与方法名自动生成，仅 PUT 触发）。
+- 指标：`king.ai.compliance.redactions{surface,category}` 与 `king.ai.compliance.moderation{surface,action,category}`。输入与工具侧脱敏使用 `category=any`，输出侧使用规则类别（`PHONE`、`EMAIL`、`ID_CARD`、`BANK_CARD`、`API_KEY`、`BEARER`、`IP`、`CUSTOM` 等）。
+- 外部审核返回的类别会归一化到固定白名单（`BLOCKLIST`、`SPAM`、`FLOOD`、`MODERATION_UNAVAILABLE`、`EXTERNAL`），白名单外的值一律记为 `EXTERNAL`（空值记为 `UNKNOWN`），任何自由文本都不会进入审计详情或指标标签。
+- 日志、审计记录、指标标签与 SSE 事件都不包含命中的明文；排障只使用规则 ID、类别与计数（SSE 的 `degraded` 事件仅携带 `surface`、`count` 与 `category`）。
+- 变量命名：以上名称是 `application.yml` 中实际读取的 `${...}` 占位符。不要写成 `KING_AI_COMPLIANCE_*`：配置前缀是 `king-ai`，Spring 对环境变量的直接绑定形式是 `KINGAI_*`，`KING_AI_COMPLIANCE_*` 不会生效。
+
 ## 9. 故障排查
 
 ### 启动失败

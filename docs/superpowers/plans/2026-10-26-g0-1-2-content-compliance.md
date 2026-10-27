@@ -812,13 +812,13 @@ class RedactionServiceTest {
     @Test
     void redactsPhoneEmailIdCardAndBankCard() {
         RedactionResult result = service.redact(
-                "联系 13812345678 / a.b@example.com / 11010519491231002X / 6222020200112233445",
+                "联系 13812345678 / a.b@example.com / 11010519491231002X / 6222020200112233446",
                 enabled());
 
         assertThat(result.text()).doesNotContain("13812345678");
         assertThat(result.text()).doesNotContain("a.b@example.com");
         assertThat(result.text()).doesNotContain("11010519491231002X");
-        assertThat(result.text()).doesNotContain("6222020200112233445");
+        assertThat(result.text()).doesNotContain("6222020200112233446");
         assertThat(result.text()).contains("[REDACTED:PHONE]");
         assertThat(result.text()).contains("[REDACTED:EMAIL]");
         assertThat(result.text()).contains("[REDACTED:ID_CARD]");
@@ -841,9 +841,9 @@ class RedactionServiceTest {
     @Test
     void ignoresInvalidBankCardAndIdChecksums() {
         RedactionResult result = service.redact(
-                "卡号 6222020200112233446 证件 110105194912310021", enabled());
+                "卡号 6222020200112233445 证件 110105194912310021", enabled());
 
-        assertThat(result.text()).contains("6222020200112233446");
+        assertThat(result.text()).contains("6222020200112233445");
         assertThat(result.text()).contains("110105194912310021");
         assertThat(result.hits()).isEmpty();
     }
