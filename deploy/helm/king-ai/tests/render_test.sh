@@ -35,6 +35,11 @@ assert_contains 'helm.sh/hook: pre-install,pre-upgrade'
 assert_contains 'helm.sh/hook-weight: "-20"'
 assert_contains 'value: prod,migrate'
 assert_contains 'kind: PersistentVolumeClaim'
+assert_contains 'kind: HorizontalPodAutoscaler'
+assert_contains 'king_ai_chat_active'
+assert_contains 'kind: PodDisruptionBudget'
+assert_contains 'kind: NetworkPolicy'
+assert_contains 'policyTypes:'
 
 # With migration disabled and exports on emptyDir neither the Job nor the
 # PVC may render (controller ruling: fold the plan's negative check in here).
@@ -45,5 +50,18 @@ if grep -qE 'kind: (Job|PersistentVolumeClaim)' "$WORK_DIR/rendered-disabled.yam
   echo "ASSERT FAILED: Job or PVC rendered with migration.enabled=false and exports.mode=emptyDir" >&2
   exit 1
 fi
+
+# Ingress render: SSE proxy tuning and cookie affinity annotations (Task 5).
+helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set ingress.enabled=true --set ingress.host=ai.example.com > "$WORK_DIR/ingress.yaml"
+for needle in \
+  'nginx.ingress.kubernetes.io/proxy-buffering: "off"' \
+  'nginx.ingress.kubernetes.io/proxy-read-timeout: "600"' \
+  'nginx.ingress.kubernetes.io/affinity: "cookie"'; do
+  if ! grep -qF -- "$needle" "$WORK_DIR/ingress.yaml"; then
+    echo "ASSERT FAILED: missing $needle in ingress render" >&2
+    exit 1
+  fi
+done
 
 echo "render tests passed"
