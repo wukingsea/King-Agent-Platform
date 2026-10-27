@@ -61,6 +61,21 @@ king-ai:
       external-timeout-ms: ${KING_AI_MODERATION_TIMEOUT_MS:2000}
       external-url: ${KING_AI_MODERATION_URL:}
       external-token: ${KING_AI_MODERATION_TOKEN:}
+    retention:
+      enabled: ${KING_AI_RETENTION_ENABLED:false}
+      dry-run: ${KING_AI_RETENTION_DRY_RUN:true}
+      cron: ${KING_AI_RETENTION_CRON:0 0 3 * * *}
+      batch-size: ${KING_AI_RETENTION_BATCH_SIZE:200}
+      max-batches: 100
+    export:
+      root-dir: ${KING_AI_EXPORT_DIR:./data/exports}
+      poll-interval-ms: 10000
+      ttl-hours: ${KING_AI_EXPORT_TTL_HOURS:24}
+      max-rows: ${KING_AI_EXPORT_MAX_ROWS:1000000}
+      batch-size: 500
+    access-review:
+      cron: ${KING_AI_ACCESS_REVIEW_CRON:0 0 4 1 1,4,7,10 *}
+      stale-days: ${KING_AI_ACCESS_STALE_DAYS:90}
   chat:
     max-history-messages: 20
     max-history-chars: 24000

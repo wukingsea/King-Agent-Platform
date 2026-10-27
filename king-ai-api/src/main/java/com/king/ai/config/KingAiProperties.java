@@ -116,6 +116,9 @@ public class KingAiProperties {
     public static class Compliance {
         private Pii pii = new Pii();
         private Moderation moderation = new Moderation();
+        private Retention retention = new Retention();
+        private Export export = new Export();
+        private AccessReview accessReview = new AccessReview();
     }
 
     @Data
@@ -133,5 +136,29 @@ public class KingAiProperties {
         private int externalTimeoutMs = 2000;
         private String externalUrl = "";
         private String externalToken = "";
+    }
+
+    @Data
+    public static class Retention {
+        private boolean enabled = false;
+        private boolean dryRun = true;
+        private String cron = "0 0 3 * * *";
+        private int batchSize = 200;
+        private int maxBatches = 100;
+    }
+
+    @Data
+    public static class Export {
+        private String rootDir = "./data/exports";
+        private long pollIntervalMs = 10000;
+        private int ttlHours = 24;
+        private long maxRows = 1_000_000;
+        private int batchSize = 500;
+    }
+
+    @Data
+    public static class AccessReview {
+        private String cron = "0 0 4 1 1,4,7,10 *";
+        private int staleDays = 90;
     }
 }
