@@ -217,20 +217,60 @@ curl -N -b visitor.txt -X POST http://localhost:8080/api/public/chat/send \
 
 ## 5. 可观测性
 
+### 5.1 信号端点
+
 - 存活检查：`/actuator/health/liveness`
 - 就绪检查：`/actuator/health/readiness`（包含数据库与 Token 存储）
 - 容器健康检查：`/api/health`（数据库 + 状态存储，异常返回 503）
 - Prometheus 指标：`/actuator/prometheus`
+- Trace 导出：OTLP/HTTP，生产默认关闭；设置
+  `OTEL_TRACING_EXPORT_ENABLED=true` 与
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` 后启用
 - OpenAPI：生产默认关闭；需要时设置 `SPRINGDOC_ENABLED=true`
-- 结构化日志：`LOG_STRUCTURED_FORMAT=ecs`，日志包含 `requestId` 与 `spaceId` 上下文
+- 结构化日志：`LOG_STRUCTURED_FORMAT=ecs`，日志包含 `requestId`、`traceId`、`spanId` 与 `spaceId` 上下文
+- 响应头：`X-Request-Id`、`X-Trace-Id`；两者都可用于日志关联
 
-建议重点告警：
+### 5.2 本地观测栈
 
-- `king_ai_chat_active` 持续升高
-- `king_ai_chat_rejected_total{reason="space_quota"}` 出现突增
-- `king_ai_chat_duration_seconds` P95 超时
-- `king_ai_index_jobs_total{outcome="failed"}` 增长
-- 就绪检查失败
+```bash
+docker compose -f docker-compose.yml \
+  -f deploy/observability/docker-compose.yml up -d
+```
+
+- Jaeger：<http://127.0.0.1:16686>
+- Prometheus：<http://127.0.0.1:9090>
+- Grafana：<http://127.0.0.1:3000>（密码来自 `GRAFANA_ADMIN_PASSWORD`）
+- 本地 overlay 采样率为 `1.0`；生产使用 `KING_AI_TRACE_SAMPLE`，默认 `0.1`
+
+本地 Jaeger 使用内存存储，重启即丢失，不能作为生产归档。生产应接入组织现有的
+OTLP 后端，或为 Jaeger 配置持久化存储。
+
+### 5.3 告警与运行手册
+
+规则文件：`deploy/observability/prometheus/alerts.yml`。重点告警：
+
+- `KingAiApiDown`、`KingAiApiTargetMissing`
+- `KingAiHttp5xxHigh`
+- `KingAiChatTtftSlow`
+- `KingAiSseCapacityHigh`
+- `KingAiChatQuotaRejectionHigh`
+- `KingAiIndexFailures`、`KingAiIndexLag`
+- `KingAiMysqlPoolHigh`
+- `KingAiRedisErrors`
+- `KingAiMilvusSearchErrors`
+- `KingAiAuditWriteFailures`
+
+每个告警的排查步骤见
+[可观测性运行手册](operations/observability.md)。告警中的
+`runbook_url` 是仓库相对路径，部署到组织内应替换为内部 Wiki 地址。
+
+### 5.4 隐私与基数边界
+
+- 指标标签不得包含用户 ID、会话 ID、请求 ID、消息 ID 或 prompt 内容。
+- `space` 仅用于 `king_ai_chat_active_space`，最多 199 个真实空间，其余归入 `other`，合计 200 条序列。
+- `king_ai_chat_active` 保持无标签单序列，供 HPA 使用。
+- Trace 只允许 ID、模型名、工具名、token 数、状态与耗时；禁止写入 prompt、回答正文、用户名、邮箱、手机号、密钥或 Cookie。
+- 审计写入失败会触发 `KingAiAuditWriteFailures`；该告警不能静默。
 
 ## 6. 备份与恢复
 

@@ -148,6 +148,59 @@ jobs:
       if: hashFiles('deploy/backup/tests/run_all.sh') != ''
       run: deploy/backup/tests/run_all.sh
 
+  observability:
+    name: Observability config and load-test static checks
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Install promtool
+      run: |
+        curl -sSLo prometheus.tar.gz https://github.com/prometheus/prometheus/releases/download/v2.55.1/prometheus-2.55.1.linux-amd64.tar.gz
+        tar -xzf prometheus.tar.gz prometheus-2.55.1.linux-amd64/promtool
+        sudo mv prometheus-2.55.1.linux-amd64/promtool /usr/local/bin/promtool
+        promtool --version
+
+    - name: Prometheus rules
+      run: deploy/observability/prometheus/tests/verify.sh
+
+    - name: Shell script lint
+      run: |
+        shellcheck --severity=error \
+          deploy/observability/prometheus/tests/verify.sh \
+          deploy/observability/grafana/validate.sh \
+          deploy/observability/tests/verify.sh \
+          loadtest/build-k6.sh \
+          loadtest/render-baseline.sh \
+          loadtest/tests/static_test.sh
+
+    - name: Grafana dashboards
+      run: deploy/observability/grafana/validate.sh
+
+    - name: Load-test static checks
+      run: loadtest/tests/static_test.sh
+
+    - name: Compose and collector validation
+      run: deploy/observability/tests/verify.sh
+
+    - uses: azure/setup-helm@v4
+      if: ${{ hashFiles('deploy/helm/king-ai/Chart.yaml') != '' }}
+      with:
+        version: v3.15.4
+
+    - name: Render chart with observability enabled
+      if: ${{ hashFiles('deploy/helm/king-ai/Chart.yaml') != '' }}
+      run: |
+        helm template king-ai deploy/helm/king-ai --namespace king-ai \
+          --set observability.tracing.enabled=true \
+          --set observability.tracing.sampleRate=0.2 > /dev/null
+
   docker:
     name: Container images
     runs-on: ubuntu-latest
