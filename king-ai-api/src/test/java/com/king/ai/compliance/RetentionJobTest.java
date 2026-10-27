@@ -37,6 +37,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -149,7 +150,7 @@ class RetentionJobTest {
 
         f.job.purge(1L, policy("SESSION", false), false, 0L);
 
-        verify(f.jdbc).update(contains("DELETE FROM king_ai_chat_session"),
+        verify(f.jdbc, times(1)).update(contains("DELETE FROM king_ai_chat_session"),
                 any(Object[].class));
         verify(f.jdbc, never()).update(contains("king_ai_chat_message"), any(Object[].class));
         verify(f.audit).recordEvent(eq(1L), eq(0L), eq("SYSTEM"),
@@ -266,6 +267,38 @@ class RetentionJobTest {
     }
 
     @Test
+    void emptyExportBatchDoesNotSignalTruncation() throws Exception {
+        Fixture f = new Fixture();
+        when(f.jdbc.queryForList(any(String.class), any(Object[].class)))
+                .thenReturn(List.of());
+
+        f.job.purge(1L, policy("EXPORT", false), false, 0L);
+
+        assertThat(f.registry.counter("king.ai.compliance.retention.truncated",
+                "type", "EXPORT").count()).isEqualTo(0.0);
+        verify(f.jdbc, never()).update(any(String.class), any(Object[].class));
+        verify(f.audit).recordEvent(eq(1L), eq(0L), eq("SYSTEM"),
+                eq("compliance.retention"), eq("retention"), eq("EXPORT"),
+                eq(AuditLogService.STATUS_SUCCESS), contains("deleted=0"), any(), any(), any());
+    }
+
+    @Test
+    void exhaustedBatchLimitSignalsTruncation() {
+        Fixture f = new Fixture();
+        f.properties.getCompliance().getRetention().setBatchSize(1);
+        f.properties.getCompliance().getRetention().setMaxBatches(1);
+        when(f.jdbc.queryForList(any(String.class), any(Object[].class)))
+                .thenReturn(List.of(Map.of("id", 9L)));
+        when(f.holds.isSessionHeld(1L, 9L)).thenReturn(true);
+
+        f.job.purge(1L, policy("SESSION", false), false, 0L);
+
+        assertThat(f.registry.counter("king.ai.compliance.retention.truncated",
+                "type", "SESSION").count()).isEqualTo(1.0);
+        verify(f.jdbc, never()).update(any(String.class), any(Object[].class));
+    }
+
+    @Test
     void failureIsAuditedAndRethrown() {
         Fixture f = new Fixture();
         when(f.jdbc.queryForList(any(String.class), any(Object[].class)))
@@ -338,6 +371,7 @@ class RetentionJobTest {
         private final LegalHoldService holds = mock(LegalHoldService.class);
         private final AuditLogService audit = mock(AuditLogService.class);
         private final ExportStorage storage;
+        private final KingAiProperties properties = new KingAiProperties();
         private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
         private final RetentionJob job;
 
@@ -348,7 +382,7 @@ class RetentionJobTest {
         private Fixture(ExportStorage storage) {
             this.storage = storage;
             this.job = new RetentionJob(policies, jdbc, holds, audit,
-                    new KingAiProperties(), storage, new ObjectMapper(), registry,
+                    properties, storage, new ObjectMapper(), registry,
                     new RedactionService(), mock(ComplianceSettingsService.class));
         }
     }

@@ -38,11 +38,14 @@ public class RetentionPolicyService {
                 || request.retentionDays() > MAX_RETENTION_DAYS) {
             throw BizException.badRequest("保留天数必须在 1–3650 之间");
         }
-        boolean archive = !Boolean.FALSE.equals(request.archiveBeforeDelete());
-        if (archive && (type == RetentionType.MESSAGE || type == RetentionType.AUDIT)) {
+        boolean archiveUnsupported = type == RetentionType.MESSAGE || type == RetentionType.AUDIT;
+        if (archiveUnsupported && Boolean.TRUE.equals(request.archiveBeforeDelete())) {
             // 当前仅 SESSION 支持删除前归档，避免配置被静默忽略后直接删除数据。
             throw BizException.badRequest("MESSAGE/AUDIT 保留策略暂不支持删除前归档");
         }
+        // 未显式指定时沿用历史默认（开启归档），但不支持归档的类型落库为关闭。
+        boolean archive = request.archiveBeforeDelete() == null
+                ? !archiveUnsupported : request.archiveBeforeDelete();
         RetentionPolicy policy = mapper.selectOne(new LambdaQueryWrapper<RetentionPolicy>()
                 .eq(RetentionPolicy::getSpaceId, spaceId)
                 .eq(RetentionPolicy::getResourceType, type.name()).last("LIMIT 1"));
@@ -54,7 +57,7 @@ public class RetentionPolicyService {
         }
         policy.setRetentionDays(request.retentionDays());
         policy.setEnabled(Boolean.FALSE.equals(request.enabled()) ? 0 : 1);
-        policy.setArchiveBeforeDelete(Boolean.FALSE.equals(request.archiveBeforeDelete()) ? 0 : 1);
+        policy.setArchiveBeforeDelete(archive ? 1 : 0);
         if (insert) {
             mapper.insert(policy);
         } else {

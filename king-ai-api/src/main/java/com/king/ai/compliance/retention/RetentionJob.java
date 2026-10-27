@@ -79,8 +79,14 @@ public class RetentionJob {
                     AuditLogService.STATUS_SUCCESS,
                     "deleted=" + deleted + ", dryRun=" + dryRun + ", cutoff=" + cutoff,
                     null, null, null);
-            meterRegistry.counter("king.ai.compliance.retention.deleted",
-                    "type", type.name(), "dryRun", Boolean.toString(dryRun)).increment(deleted);
+            // 指标是尽力而为的观测信号，不能因其失败把已成功的清理记成失败审计。
+            try {
+                meterRegistry.counter("king.ai.compliance.retention.deleted",
+                        "type", type.name(), "dryRun", Boolean.toString(dryRun)).increment(deleted);
+            } catch (RuntimeException ex) {
+                log.warn("保留清理指标记录失败：type={}, reason={}",
+                        type.name(), ex.getClass().getSimpleName());
+            }
         } catch (RuntimeException ex) {
             // 清理中途失败时必须留下失败证据，否则审计会误报为成功；异常继续上抛由调度器记录。
             auditLogService.recordEvent(spaceId, operatorId == null ? 0L : operatorId, "SYSTEM",
@@ -126,10 +132,10 @@ public class RetentionJob {
                     ids.add(id);
                 }
             }
-            if (!ids.isEmpty()) {
-                if (!dryRun && archive && !archiveSessions(spaceId, ids)) {
-                    continue;
-                }
+            boolean shortBatch = rows.size() < batch;
+            boolean archived = ids.isEmpty() || dryRun || !archive
+                    || archiveSessions(spaceId, ids);
+            if (!ids.isEmpty() && archived) {
                 if (dryRun) {
                     total += ids.size();
                 } else {
@@ -143,7 +149,7 @@ public class RetentionJob {
                     total += deletable.size();
                 }
             }
-            if (rows.size() < batch) {
+            if (shortBatch) {
                 truncated = false;
                 break;
             }
@@ -318,6 +324,7 @@ public class RetentionJob {
                             + "AND expires_at < ? AND id > ? ORDER BY id LIMIT ?",
                     spaceId, now, lastId, batch);
             if (rows.isEmpty()) {
+                truncated = false;
                 break;
             }
             for (Map<String, Object> row : rows) {
@@ -371,6 +378,8 @@ public class RetentionJob {
     }
 
     private void warnTruncated(Long spaceId, String type, long lastId) {
+        meterRegistry.counter("king.ai.compliance.retention.truncated",
+                "type", type).increment();
         log.warn("保留清理达到单轮批次上限，剩余数据将在下次运行继续：spaceId={}, type={}, lastId={}",
                 spaceId, type, lastId);
     }

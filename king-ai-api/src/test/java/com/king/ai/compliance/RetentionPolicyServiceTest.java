@@ -3,10 +3,12 @@ package com.king.ai.compliance;
 import com.king.ai.audit.AuditLogService;
 import com.king.ai.common.BizException;
 import com.king.ai.compliance.dto.RetentionPolicyUpdateRequest;
+import com.king.ai.compliance.dto.RetentionPolicyView;
 import com.king.ai.compliance.retention.RetentionPolicyMapper;
 import com.king.ai.compliance.retention.RetentionPolicyService;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
@@ -29,5 +31,21 @@ class RetentionPolicyServiceTest {
                 new RetentionPolicyUpdateRequest("AUDIT", 30, true, true), 2L))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("归档");
+    }
+
+    @Test
+    void omittedArchiveFlagIsIgnoredForUnsupportedTypes() {
+        RetentionPolicyView view = service.upsert(1L,
+                new RetentionPolicyUpdateRequest("MESSAGE", 30, true, null), 2L);
+
+        assertThat(view.archiveBeforeDelete()).isFalse();
+    }
+
+    @Test
+    void omittedArchiveFlagKeepsSessionDefault() {
+        RetentionPolicyView view = service.upsert(1L,
+                new RetentionPolicyUpdateRequest("SESSION", 30, true, null), 2L);
+
+        assertThat(view.archiveBeforeDelete()).isTrue();
     }
 }
