@@ -84,6 +84,7 @@ king-ai:
     max-tool-result-chars: 8000
     llm-timeout-seconds: 180
     max-concurrent-per-space: ${KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE:4}
+    sse-capacity: ${KING_AI_SSE_CAPACITY:200}
   rag:
     max-context-chars: 8000
     embedding-batch-size: 16

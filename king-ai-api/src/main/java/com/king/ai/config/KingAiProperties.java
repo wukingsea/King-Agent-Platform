@@ -44,6 +44,10 @@ public class KingAiProperties {
          * single noisy tenant; 0 or a negative value disables the limit.
          */
         private int maxConcurrentPerSpace = 4;
+        /**
+         * Maximum SSE connections accepted by this instance. 0 or a negative value disables admission control.
+         */
+        private int sseCapacity = 200;
     }
 
     @Data
