@@ -80,3 +80,14 @@ Gauge），无需额外 exporter。
 - NetworkPolicy 的实际执行取决于 CNI：kind 默认 CNI 不执行 NetworkPolicy
   （仅渲染生效）；生产环境必须使用支持 NetworkPolicy 的 CNI
   （Calico/Cilium 等）并验证策略真实生效。
+
+## 备份与恢复
+- API 的导出 PVC 路径为 `/app/data/exports`，对应 values `persistence.exports`。
+- 备份脚本不打包进 chart；使用 `deploy/backup` 与 `deploy/backup/README.md`。
+- 启用 NetworkPolicy 时必须为数据库/Redis/Milvus/OTel/对象存储配置 CIDR；公共模型与 MCP 通过 443 放行。
+- 迁移 Job（`<fullname>-migrate`）由独立的 NetworkPolicy 管控，出站仅放行 DNS 与数据库（含内置 MySQL pod 选择器）；除此之外无任何出站权限。
+- 建议在 Calico/Cilium 集群验证 NetworkPolicy；kind 默认 CNI 不执行策略，kind values 会关闭它。
+
+## 迁移
+- 生产使用 `pre-install/pre-upgrade` Job；`kubectl logs job/king-ai-migrate` 查看结果。
+- 内置依赖模式因 hook 运行时数据库尚未就绪，设置 `migration.enabled=false`，由 API 启动时迁移。

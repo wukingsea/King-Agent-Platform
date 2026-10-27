@@ -272,6 +272,70 @@ curl -s http://127.0.0.1:8080/api/health
 
 Flyway 迁移只向前执行。回滚应用镜像前必须确认新版本没有执行破坏性迁移；否则应先从备份恢复数据库。生产发布前建议在预发环境使用数据库副本执行一次迁移演练。
 
+## 7.1 Kubernetes / Helm 部署
+
+Helm chart 位于 `deploy/helm/king-ai`，完整 values 说明见该目录 README。
+
+```bash
+kubectl create namespace king-ai
+# 按 README 创建 king-ai-app、king-ai-admin、king-ai-db、king-ai-redis
+helm upgrade --install king-ai deploy/helm/king-ai -n king-ai \
+  --set ingress.enabled=true --set ingress.host=ai.example.com \
+  --set externalDatabase.host=mysql.internal \
+  --set externalRedis.host=redis.internal \
+  --set externalMilvus.url=http://milvus.internal:19530 \
+  --set networkPolicy.egress.databaseCidrs={10.0.10.0/24} \
+  --set networkPolicy.egress.redisCidrs={10.0.20.0/24} \
+  --set networkPolicy.egress.milvusCidrs={10.0.30.0/24} \
+  --wait --timeout 15m
+```
+
+发布顺序：`pre-install/pre-upgrade` 迁移 Job → API/UI 滚动更新。Job 失败时 Helm 停止，不继续滚动。
+`persistence.exports.mode=pvc` 需要 ReadWriteMany 存储；只有 RWO 时将 API 限制为单副本，或等待 P2-3 对象存储。
+SSE 在 Pod 滚动升级期间会被终止，断线恢复属于 P2-2；Ingress 已关闭缓冲并设置 600 秒超时。
+
+回滚：
+
+```bash
+helm history king-ai -n king-ai
+helm rollback king-ai <REVISION> -n king-ai --wait --timeout 15m
+```
+
+Flyway 迁移只向前。若新版本执行了破坏性迁移，回滚镜像前必须先从备份恢复数据库。
+
+## 7.2 备份与恢复演练
+
+生产备份使用 `deploy/backup` 脚本，详细步骤见 `deploy/backup/README.md`。
+
+```bash
+# 每日全量 + 每 5 分钟 binlog + 每日 Milvus
+deploy/backup/mysql-backup.sh
+deploy/backup/mysql-binlog-archive.sh
+deploy/backup/milvus-backup.sh
+
+# 隔离 namespace 演练
+DRILL_NAMESPACE=king-ai-drill-$(date +%Y%m%d) \
+MYSQL_DUMP=/backup/<label>/king_ai.sql.gz \
+MILVUS_BACKUP_NAME=<label> \
+MILVUS_BACKUP_MINIO_ADDRESS=minio.backup.internal \
+MILVUS_BACKUP_MINIO_ACCESS_KEY=... \
+MILVUS_BACKUP_MINIO_SECRET_KEY=... \
+MILVUS_BACKUP_MINIO_BUCKET=king-ai-backups \
+deploy/backup/restore-drill.sh
+```
+
+验收阈值：RPO ≤ 15 分钟、RTO ≤ 1 小时。实测值写入 `docs/operations/backup-drill-YYYY-MM-DD.md`。
+
+## 7.3 迁移版本分配
+
+| 版本 | 内容 | 所属计划 |
+| --- | --- | --- |
+| V9 | 内容合规设置 | G0-1/G0-2 |
+| V10 | 保留策略、法律保留、导出任务 | G0-3/G0-4 |
+| V11 | 访问复核、`last_login_at`、`api_key_rotated_at` | G0-3/G0-4 |
+
+Helm 只执行镜像内 Flyway；迁移文件必须随 API 镜像发布。
+
 ## 8. 安全清单
 
 - 使用独立、随机的 `KING_AI_SECRET` 与 `KING_AI_ENCRYPTION_KEY`，并制定轮换计划；轮换加密密钥时把旧密钥放入 `KING_AI_PREVIOUS_ENCRYPTION_KEYS`。
