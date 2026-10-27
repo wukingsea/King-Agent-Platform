@@ -51,6 +51,9 @@ public class ComplianceStreamGuard {
         if (!scan.hits().isEmpty() && settings.outputAction() == ModerationAction.WARN) {
             pending.setLength(0);
             pending.append(localModerator.mask(scanRedaction.text(), scan));
+            // 缓冲区已被脱敏文本替换，这些 PII 命中不会再出现在后续放行窗口中，
+            // 必须在替换时计入，否则该 pass 的脱敏计数会永久丢失。
+            mergeCounts(scanRedaction.hits());
             masked = true;
         }
         if (pending.length() <= holdback) {
@@ -65,9 +68,7 @@ public class ComplianceStreamGuard {
         }
         String window = pending.substring(0, emitEnd);
         RedactionResult result = redactionService.redact(window, settings);
-        for (RedactionHit hit : result.hits()) {
-            counts.merge(hit.category(), 1, Integer::sum);
-        }
+        mergeCounts(result.hits());
         pending.delete(0, emitEnd);
         return result.text();
     }
@@ -76,20 +77,22 @@ public class ComplianceStreamGuard {
         if (pending.length() == 0) {
             return "";
         }
-        String scanText = redactionService.redact(pending.toString(), settings).text();
-        ModerationScan scan = moderationService.scan(scanText, settings, context);
+        RedactionResult scanRedaction = redactionService.redact(pending.toString(), settings);
+        ModerationScan scan = moderationService.scan(scanRedaction.text(), settings, context);
         if (mustBlock(scan)) {
             throw new ContentModerationException(scan.decision().category());
         }
+        boolean masked = false;
         String text = pending.toString();
         if (!scan.hits().isEmpty() && settings.outputAction() == ModerationAction.WARN) {
             // 命中区间属于 scanText，必须用同一份文本做替换。
-            text = localModerator.mask(scanText, scan);
+            text = localModerator.mask(scanRedaction.text(), scan);
+            masked = true;
         }
         RedactionResult result = redactionService.redact(text, settings);
-        for (RedactionHit hit : result.hits()) {
-            counts.merge(hit.category(), 1, Integer::sum);
-        }
+        // 屏蔽分支的输出已脱敏，最终这次 redact 观察不到 PII；计入首次扫描的命中，
+        // 保证同一 pass 内每个命中恰好计一次。非屏蔽分支两者等价，以最终结果为准。
+        mergeCounts(masked ? scanRedaction.hits() : result.hits());
         pending.setLength(0);
         return result.text();
     }
@@ -107,6 +110,12 @@ public class ComplianceStreamGuard {
         return scan.decision().blocking(publicChat)
                 && (settings.outputAction() == ModerationAction.BLOCK
                 || (publicChat && scan.decision().verdict() == ModerationVerdict.REVIEW));
+    }
+
+    private void mergeCounts(List<RedactionHit> hits) {
+        for (RedactionHit hit : hits) {
+            counts.merge(hit.category(), 1, Integer::sum);
+        }
     }
 
     /**

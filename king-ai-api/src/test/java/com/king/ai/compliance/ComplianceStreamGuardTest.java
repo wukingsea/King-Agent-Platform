@@ -75,6 +75,22 @@ class ComplianceStreamGuardTest {
     }
 
     @Test
+    void countsPiiRedactedWhenWarnMaskRewritesTheBuffer() {
+        ComplianceSettings settings = new ComplianceSettings(true, ModerationMode.LOCAL,
+                ModerationAction.BLOCK, ModerationAction.WARN, List.of("违禁词"),
+                List.of(), 128);
+        ComplianceStreamGuard guard = guard(settings, false);
+
+        String text = guard.accept("电话13812345678 违禁词") + guard.flush();
+
+        assertThat(text).doesNotContain("13812345678");
+        assertThat(text).doesNotContain("违禁词");
+        assertThat(text).contains("[REDACTED:PHONE]");
+        assertThat(text).contains("[已屏蔽]");
+        assertThat(guard.countsByCategory().get("PHONE")).isEqualTo(1);
+    }
+
+    @Test
     void resetDiscardsBufferedText() {
         ComplianceStreamGuard guard = guard(PII, false);
         guard.accept("1381234");
