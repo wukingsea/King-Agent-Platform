@@ -111,8 +111,8 @@ public class ComplianceSettingsService {
         return new ComplianceSettings(
                 row.getPiiEnabled() != null && row.getPiiEnabled() == 1,
                 parseModeOrDefault(row.getModerationMode()),
-                ModerationAction.parse(row.getModerationInputAction()),
-                ModerationAction.parse(row.getModerationOutputAction()),
+                parseActionOrDefault(row.getModerationInputAction()),
+                parseActionOrDefault(row.getModerationOutputAction()),
                 splitLines(row.getBlocklist()),
                 compileQuietly(splitLines(row.getPiiCustomPatterns())),
                 holdback());
@@ -134,6 +134,15 @@ public class ComplianceSettingsService {
         } catch (IllegalArgumentException ex) {
             log.warn("Invalid moderation mode in database, falling back to OFF: {}", value);
             return ModerationMode.OFF;
+        }
+    }
+
+    private ModerationAction parseActionOrDefault(String value) {
+        try {
+            return ModerationAction.parse(value);
+        } catch (IllegalArgumentException ex) {
+            log.warn("Invalid moderation action in database, falling back to BLOCK: {}", value);
+            return ModerationAction.BLOCK;
         }
     }
 

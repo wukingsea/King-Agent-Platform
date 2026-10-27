@@ -52,6 +52,22 @@ class ComplianceSettingsServiceTest {
     }
 
     @Test
+    void effectiveDefaultsMalformedStoredActionsToBlock() {
+        ComplianceSetting row = new ComplianceSetting();
+        row.setSpaceId(7L);
+        row.setPiiEnabled(1);
+        row.setModerationMode("LOCAL");
+        row.setModerationInputAction("NOT_AN_ACTION");
+        row.setModerationOutputAction("ALSO_NOT_AN_ACTION");
+        when(mapper.selectOne(any())).thenReturn(row);
+
+        ComplianceSettings settings = service.effective(7L);
+
+        assertThat(settings.inputAction()).isEqualTo(ModerationAction.BLOCK);
+        assertThat(settings.outputAction()).isEqualTo(ModerationAction.BLOCK);
+    }
+
+    @Test
     void effectiveCachesPerSpace() {
         when(mapper.selectOne(any())).thenReturn(null);
 
