@@ -91,6 +91,33 @@ class SupplierServiceTest {
     }
 
     @Test
+    void updateWithBlankKeyClearsRotationTime() {
+        Supplier existing = existingSupplier();
+        when(supplierMapper.selectById(9L)).thenReturn(existing);
+        when(supplierMapper.selectCount(any())).thenReturn(0L);
+        when(supplierMapper.updateById(any(Supplier.class))).thenReturn(1);
+
+        service.update(1L, 9L, request("  "));
+
+        ArgumentCaptor<Supplier> captor = ArgumentCaptor.forClass(Supplier.class);
+        verify(supplierMapper).updateById(captor.capture());
+        assertThat(captor.getValue().getApiKey()).isEmpty();
+        assertThat(captor.getValue().getApiKeyRotatedAt()).isNull();
+        verify(cryptoService, never()).encrypt(any());
+    }
+
+    @Test
+    void rotationTimeMustBeWritableAsNull() throws Exception {
+        com.baomidou.mybatisplus.annotation.TableField field = Supplier.class
+                .getDeclaredField("apiKeyRotatedAt")
+                .getAnnotation(com.baomidou.mybatisplus.annotation.TableField.class);
+
+        assertThat(field).isNotNull();
+        assertThat(field.updateStrategy())
+                .isEqualTo(com.baomidou.mybatisplus.annotation.FieldStrategy.ALWAYS);
+    }
+
+    @Test
     void updateWithNullKeyLeavesKeyAndRotationTimeUntouched() {
         Supplier existing = existingSupplier();
         when(supplierMapper.selectById(9L)).thenReturn(existing);

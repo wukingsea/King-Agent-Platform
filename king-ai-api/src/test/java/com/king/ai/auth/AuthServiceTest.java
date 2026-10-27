@@ -69,8 +69,22 @@ class AuthServiceTest {
         ArgumentCaptor<LambdaUpdateWrapper<User>> captor =
                 ArgumentCaptor.forClass((Class) LambdaUpdateWrapper.class);
         verify(userMapper).update(isNull(), captor.capture());
-        assertThat(captor.getValue().getSqlSet()).contains("last_login_at");
+        assertThat(captor.getValue().getSqlSet())
+                .contains("last_login_at")
+                .doesNotContain("password", "status", "role", "nickname");
+        assertThat(captor.getValue().getSqlSegment()).contains("id");
         assertThat(response.token()).isNotBlank();
+    }
+
+    @Test
+    void lastLoginAtIsNeverWrittenByFullEntityUpdates() throws Exception {
+        com.baomidou.mybatisplus.annotation.TableField field = User.class
+                .getDeclaredField("lastLoginAt")
+                .getAnnotation(com.baomidou.mybatisplus.annotation.TableField.class);
+
+        assertThat(field).isNotNull();
+        assertThat(field.updateStrategy())
+                .isEqualTo(com.baomidou.mybatisplus.annotation.FieldStrategy.NEVER);
     }
 
     @Test

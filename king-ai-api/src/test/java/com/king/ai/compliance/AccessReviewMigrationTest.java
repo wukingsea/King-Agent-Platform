@@ -26,12 +26,45 @@ class AccessReviewMigrationTest {
              Statement statement = connection.createStatement()) {
             assertThat(columns(statement, "king_ai_access_review"))
                     .contains("space_id", "status", "summary", "generated_by", "generated_at",
-                            "completed_at");
+                            "completed_at", "version", "created_at", "updated_at");
             assertThat(columns(statement, "king_ai_access_review_item"))
-                    .contains("review_id", "subject_type", "subject_id", "subject_name", "role",
-                            "last_activity_at", "flags", "decision", "decided_by", "decided_at");
+                    .contains("review_id", "space_id", "subject_type", "subject_id", "subject_name",
+                            "role", "last_activity_at", "flags", "decision", "decided_by",
+                            "decided_at", "note", "version", "created_at", "updated_at");
             assertThat(columns(statement, "king_ai_user")).contains("last_login_at");
             assertThat(columns(statement, "king_ai_supplier")).contains("api_key_rotated_at");
+            assertThat(nullable(statement, "king_ai_access_review", "generated_at")).isFalse();
+            assertThat(nullable(statement, "king_ai_access_review_item", "subject_name")).isFalse();
+            assertThat(nullable(statement, "king_ai_access_review_item", "subject_id")).isFalse();
+            assertThat(nullable(statement, "king_ai_access_review_item", "decision")).isFalse();
+            assertThat(nullable(statement, "king_ai_access_review_item", "note")).isTrue();
+            assertThat(cascades(statement, "king_ai_access_review")).isTrue();
+            assertThat(cascades(statement, "king_ai_access_review_item")).isTrue();
+        }
+    }
+
+    private boolean nullable(Statement statement, String table, String column) throws Exception {
+        try (ResultSet rs = statement.executeQuery(
+                "SELECT is_nullable FROM information_schema.columns WHERE table_name = '"
+                        + table + "' AND column_name = '" + column + "'")) {
+            assertThat(rs.next()).isTrue();
+            return "YES".equalsIgnoreCase(rs.getString(1));
+        }
+    }
+
+    private boolean cascades(Statement statement, String table) throws Exception {
+        try (ResultSet rs = statement.executeQuery(
+                "SELECT rc.delete_rule FROM information_schema.referential_constraints rc "
+                        + "JOIN information_schema.table_constraints tc "
+                        + "ON tc.constraint_name = rc.constraint_name "
+                        + "WHERE tc.table_name = '" + table + "'")) {
+            boolean found = false;
+            while (rs.next()) {
+                if ("CASCADE".equalsIgnoreCase(rs.getString(1))) {
+                    found = true;
+                }
+            }
+            return found;
         }
     }
 
