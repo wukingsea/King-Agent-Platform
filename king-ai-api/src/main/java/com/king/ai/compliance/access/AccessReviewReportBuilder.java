@@ -1,5 +1,7 @@
 package com.king.ai.compliance.access;
 
+import com.king.ai.common.Texts;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -44,8 +46,10 @@ public final class AccessReviewReportBuilder {
             if ("OWNER".equals(member.role())) {
                 flags.add("OWNER");
             }
+            String username = Texts.blankToDefault(member.username(), "-");
+            String display = Texts.blankToDefault(member.nickname(), username);
             findings.add(new AccessFinding("MEMBER", member.userId(),
-                    member.nickname() + " (" + member.username() + ")", member.role(),
+                    display + " (" + username + ")", member.role(),
                     member.lastLoginAt(), List.copyOf(flags)));
         }
         for (CredentialSnapshot supplier : suppliers) {

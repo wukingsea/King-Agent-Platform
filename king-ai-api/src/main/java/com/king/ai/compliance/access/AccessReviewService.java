@@ -97,8 +97,18 @@ public class AccessReviewService {
             item.setSpaceId(spaceId);
             item.setSubjectType(finding.subjectType());
             item.setSubjectId(finding.subjectId());
-            item.setSubjectName(Texts.blankToDefault(Texts.trimTo(finding.name(), 200), "-"));
-            item.setRole(Texts.trimTo(finding.role(), 20));
+            if ("PUBLIC_AGENT".equals(finding.subjectType())) {
+                // public_id 是 32 位 UUID，而 role 列仅为 VARCHAR(20)，不能把公开标识塞进 role。
+                // 改为在名称中保留完整 public_id，并将角色标记为 PUBLIC。
+                String publicId = Texts.blankToDefault(finding.role(), "-");
+                String name = Texts.blankToDefault(finding.name(), "-");
+                item.setSubjectName(Texts.blankToDefault(
+                        Texts.trimTo(name + " (" + publicId + ")", 200), "-"));
+                item.setRole("PUBLIC");
+            } else {
+                item.setSubjectName(Texts.blankToDefault(Texts.trimTo(finding.name(), 200), "-"));
+                item.setRole(Texts.trimTo(finding.role(), 20));
+            }
             item.setLastActivityAt(finding.lastActivityAt());
             item.setFlags(String.join(",", finding.flags()));
             item.setDecision(DECISION_PENDING);
@@ -136,6 +146,15 @@ public class AccessReviewService {
     @Transactional
     public AccessReviewItemView decide(Long spaceId, Long reviewId, Long itemId,
                                        AccessReviewDecisionRequest request, UserPrincipal operator) {
+        // MySQL REPEATABLE READ 下事务的首次普通读取即固定快照；若先查复核再查复核项，
+        // 两个并发的“最后一项”决策会各自看到对方仍为 PENDING，导致复核永远不完成。
+        // 因此先用行锁串行化同一复核的决策，再读取事务内状态。
+        List<Long> locked = jdbcTemplate.query(
+                "SELECT id FROM king_ai_access_review WHERE id = ? AND space_id = ? FOR UPDATE",
+                (rs, rowNum) -> rs.getLong(1), reviewId, spaceId);
+        if (locked.isEmpty()) {
+            throw BizException.notFound("访问复核不存在或已完成");
+        }
         AccessReview review = reviewMapper.selectById(reviewId);
         if (review == null || !Objects.equals(review.getSpaceId(), spaceId)
                 || !STATUS_OPEN.equals(review.getStatus())) {
@@ -201,6 +220,10 @@ public class AccessReviewService {
                 || AccessReviewDecisions.ACKNOWLEDGE.equals(decision)) {
             return;
         }
+        // 以空间行锁串行化同一空间的成员变更，保证“所有者数量”校验与后续删除/降级之间
+        // 不会因并发而同时通过（TOCTOU），避免两个所有者被同时移除。
+        jdbcTemplate.queryForList(
+                "SELECT id FROM king_ai_space WHERE id = ? FOR UPDATE", Long.class, spaceId);
         if (AccessReviewDecisions.REMOVE.equals(decision)
                 && Objects.equals(item.getSubjectId(), operator.id())) {
             throw BizException.badRequest("不能移除当前登录账号");

@@ -1,6 +1,7 @@
 package com.king.ai.compliance;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.king.ai.audit.AuditLogService;
 import com.king.ai.common.BizException;
@@ -21,6 +22,7 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
@@ -37,6 +39,7 @@ import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -73,6 +76,14 @@ class AccessReviewServiceTest {
         audit = mock(AuditLogService.class);
         service = new AccessReviewService(reviewMapper, itemMapper, jdbc, spaceService, audit,
                 new KingAiProperties());
+        // decide 会先对复核行加锁；默认放行，个别测试可覆盖为空结果验证 404。
+        doAnswer(invocation -> {
+            String sql = invocation.getArgument(0);
+            return sql.contains("FOR UPDATE") ? List.of(REVIEW) : List.of();
+        }).when(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
+        // 成员变更会先锁定空间行，默认返回该空间。
+        doAnswer(invocation -> List.of(SPACE))
+                .when(jdbc).queryForList(anyString(), eq(Long.class), any(Object[].class));
     }
 
     @Test
@@ -138,6 +149,16 @@ class AccessReviewServiceTest {
         assertThat(view.items()).extracting(AccessReviewItemView::subjectName)
                 .containsExactly("Alice (alice)", "Bob (bob)");
 
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<LambdaQueryWrapper<AccessReview>> supersedeQuery =
+                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(reviewMapper).selectList(supersedeQuery.capture());
+        LambdaQueryWrapper<AccessReview> wrapper = supersedeQuery.getValue();
+        assertThat(wrapper.getSqlSegment()).contains("space_id", "status");
+        assertThat(wrapper.getParamNameValuePairs().values())
+                .containsExactlyInAnyOrder(SPACE, "OPEN");
+        verify(reviewMapper, times(1)).updateById(any(AccessReview.class));
+
         verify(audit).recordEvent(eq(SPACE), eq(7L), anyString(),
                 eq("compliance.access_review_generate"), eq("access_review"),
                 eq(String.valueOf(REVIEW)), eq(AuditLogService.STATUS_SUCCESS),
@@ -169,6 +190,64 @@ class AccessReviewServiceTest {
                 eq("compliance.access_review_generate"), eq("access_review"),
                 eq(String.valueOf(REVIEW)), eq(AuditLogService.STATUS_SUCCESS),
                 eq("findings=0"), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    void generatePersistsNonNullSubjectNameWhenNicknameMissing() {
+        when(reviewMapper.selectList(any())).thenReturn(List.of());
+        List<AccessReviewItem> insertedItems = stubGeneratePersistence();
+        stubFindingQueries(List.of(new AccessReviewReportBuilder.MemberSnapshot(
+                5L, "alice", null, "VIEWER", NOW)), List.of(), List.of(), List.of());
+
+        service.generate(SPACE, 7L);
+
+        assertThat(insertedItems).singleElement().satisfies(item -> {
+            assertThat(item.getSubjectName()).isNotNull().isEqualTo("alice (alice)");
+            assertThat(item.getRole()).isEqualTo("VIEWER");
+        });
+    }
+
+    @Test
+    void generateFallsBackToDashWhenCredentialNameMissing() {
+        when(reviewMapper.selectList(any())).thenReturn(List.of());
+        List<AccessReviewItem> insertedItems = stubGeneratePersistence();
+        stubFindingQueries(List.of(),
+                List.of(new AccessReviewReportBuilder.CredentialSnapshot(5L, null, NOW)),
+                List.of(), List.of());
+
+        service.generate(SPACE, 7L);
+
+        assertThat(insertedItems).singleElement().satisfies(item -> {
+            assertThat(item.getSubjectName()).isEqualTo("-");
+            assertThat(item.getRole()).isEqualTo("供应商密钥");
+        });
+    }
+
+    @Test
+    void generateKeepsFullPublicIdAndLabelsPublicAgentsAsPublic() {
+        when(reviewMapper.selectList(any())).thenReturn(List.of());
+        List<AccessReviewItem> insertedItems = stubGeneratePersistence();
+        String publicId = "f47ac10b58cc4372a5670e02b2c3d479";
+        stubFindingQueries(List.of(),
+                List.of(new AccessReviewReportBuilder.CredentialSnapshot(5L, "openai", NOW)),
+                List.of(new AccessReviewReportBuilder.CredentialSnapshot(6L, "mcp-a", NOW)),
+                List.of(new AccessReviewReportBuilder.PublicAgentSnapshot(7L, "客服", publicId,
+                        NOW)));
+
+        service.generate(SPACE, 7L);
+
+        AccessReviewItem agent = insertedItems.stream()
+                .filter(item -> "PUBLIC_AGENT".equals(item.getSubjectType()))
+                .findFirst().orElseThrow();
+        assertThat(agent.getSubjectName()).isEqualTo("客服 (" + publicId + ")");
+        assertThat(agent.getSubjectName()).contains(publicId);
+        assertThat(agent.getRole()).isEqualTo("PUBLIC");
+        assertThat(insertedItems).filteredOn(item -> "SUPPLIER".equals(item.getSubjectType()))
+                .singleElement().satisfies(item -> assertThat(item.getRole())
+                        .isEqualTo("供应商密钥"));
+        assertThat(insertedItems).filteredOn(item -> "MCP".equals(item.getSubjectType()))
+                .singleElement().satisfies(item -> assertThat(item.getRole())
+                        .isEqualTo("MCP 配置"));
     }
 
     @Test
@@ -249,6 +328,45 @@ class AccessReviewServiceTest {
                     assertThat(ex.getCode()).isEqualTo(404);
                     assertThat(ex.getMessage()).contains("已完成");
                 });
+    }
+
+    @Test
+    void decideLocksReviewRowBeforeReadingReviewState() {
+        stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "VIEWER", "PENDING"));
+
+        service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("CONFIRM", null), operator(2L));
+
+        InOrder order = inOrder(jdbc, reviewMapper);
+        order.verify(jdbc).query(contains("FROM king_ai_access_review"), any(RowMapper.class),
+                eq(REVIEW), eq(SPACE));
+        order.verify(reviewMapper).selectById(REVIEW);
+    }
+
+    @Test
+    void decideReturns404WhenReviewRowCannotBeLocked() {
+        doAnswer(invocation -> List.of()).when(jdbc).query(anyString(),
+                any(RowMapper.class), any(Object[].class));
+
+        assertThatThrownBy(() -> service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("CONFIRM", null), operator(2L)))
+                .isInstanceOfSatisfying(BizException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo(404);
+                    assertThat(ex.getMessage()).contains("访问复核不存在或已完成");
+                });
+        verify(reviewMapper, never()).selectById(any());
+        verify(itemMapper, never()).selectById(any());
+    }
+
+    @Test
+    void decideRejectsReviewFromAnotherSpaceBeforeLoadingItem() {
+        when(reviewMapper.selectById(REVIEW)).thenReturn(review(REVIEW, 2L, "OPEN"));
+
+        assertThatThrownBy(() -> service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("CONFIRM", null), operator(2L)))
+                .isInstanceOfSatisfying(BizException.class,
+                        ex -> assertThat(ex.getCode()).isEqualTo(404));
+        verify(itemMapper, never()).selectById(any());
     }
 
     @Test
@@ -412,6 +530,38 @@ class AccessReviewServiceTest {
     }
 
     @Test
+    void snapshotAdminLiveOwnerCannotBeRemovedByNonOwner() {
+        stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "ADMIN", "PENDING"));
+        when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.ADMIN);
+        stubLiveRole("OWNER");
+
+        assertThatThrownBy(() -> service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("REMOVE", null), operator(2L)))
+                .isInstanceOfSatisfying(BizException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo(403);
+                    assertThat(ex.getMessage()).contains("只有空间所有者");
+                });
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        verify(jdbc, never()).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+    }
+
+    @Test
+    void snapshotAdminLiveOwnerCannotBeDowngradedByNonOwner() {
+        stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "ADMIN", "PENDING"));
+        when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.ADMIN);
+        stubLiveRole("OWNER");
+
+        assertThatThrownBy(() -> service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("DOWNGRADE", null), operator(2L)))
+                .isInstanceOfSatisfying(BizException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo(403);
+                    assertThat(ex.getMessage()).contains("只有空间所有者");
+                });
+        verify(jdbc, never()).update(anyString(), any(Object[].class));
+        verify(jdbc, never()).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+    }
+
+    @Test
     void singleOwnerCannotBeRemoved() {
         stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "OWNER", "PENDING"));
         when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.OWNER);
@@ -462,6 +612,60 @@ class AccessReviewServiceTest {
     }
 
     @Test
+    void ownerRemovalLocksSpaceBeforeCountingOwners() {
+        stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "OWNER", "PENDING"));
+        when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.OWNER);
+        stubLiveRole("OWNER");
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(SPACE))).thenReturn(2L);
+
+        service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("REMOVE", null), operator(2L));
+
+        InOrder order = inOrder(jdbc);
+        order.verify(jdbc).queryForList(contains("king_ai_space"), eq(Long.class), eq(SPACE));
+        order.verify(jdbc).query(contains("SELECT role FROM king_ai_user_space"),
+                any(RowMapper.class), eq(SPACE), eq(9L));
+        order.verify(jdbc).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+        order.verify(jdbc).update(contains("DELETE FROM king_ai_user_space"), any(Object[].class));
+    }
+
+    @Test
+    void ownerDowngradeLocksSpaceBeforeCountingOwners() {
+        stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "OWNER", "PENDING"));
+        when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.OWNER);
+        stubLiveRole("OWNER");
+        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(SPACE))).thenReturn(2L);
+
+        service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("DOWNGRADE", null), operator(2L));
+
+        InOrder order = inOrder(jdbc);
+        order.verify(jdbc).queryForList(contains("king_ai_space"), eq(Long.class), eq(SPACE));
+        order.verify(jdbc).query(contains("SELECT role FROM king_ai_user_space"),
+                any(RowMapper.class), eq(SPACE), eq(9L));
+        order.verify(jdbc).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+        order.verify(jdbc).update(contains("UPDATE king_ai_user_space SET role = ?"),
+                any(Object[].class));
+    }
+
+    @Test
+    void nonOwnerRemovalLocksSpaceBeforeDeletingMembership() {
+        stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "VIEWER", "PENDING"));
+        when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.ADMIN);
+        stubLiveRole("VIEWER");
+
+        service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("REMOVE", null), operator(2L));
+
+        InOrder order = inOrder(jdbc);
+        order.verify(jdbc).queryForList(contains("king_ai_space"), eq(Long.class), eq(SPACE));
+        order.verify(jdbc).query(contains("SELECT role FROM king_ai_user_space"),
+                any(RowMapper.class), eq(SPACE), eq(9L));
+        order.verify(jdbc).update(contains("DELETE FROM king_ai_user_space"), any(Object[].class));
+        verify(jdbc, never()).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+    }
+
+    @Test
     void acknowledgeSupplierDoesNotTouchMembership() {
         AccessReviewItem item = item(ITEM, REVIEW, "SUPPLIER", 5L, null, "PENDING");
         stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), item);
@@ -472,7 +676,9 @@ class AccessReviewServiceTest {
 
         assertThat(view.decision()).isEqualTo("ACKNOWLEDGE");
         verify(jdbc, never()).update(anyString(), any(Object[].class));
-        verify(jdbc, never()).query(anyString(), any(RowMapper.class), any(Object[].class));
+        verify(jdbc, never()).query(contains("king_ai_user_space"), any(RowMapper.class),
+                any(Object[].class));
+        verify(jdbc, never()).queryForList(anyString(), eq(Long.class), any(Object[].class));
         verify(spaceService, never()).roleInSpace(any(), any());
     }
 
@@ -517,6 +723,24 @@ class AccessReviewServiceTest {
                     assertThat(ex.getCode()).isEqualTo(409);
                     assertThat(ex.getMessage()).contains("访问复核");
                 });
+    }
+
+    @Test
+    void itemOptimisticLockConflictStopsBeforeCompletionAndAudit() {
+        AccessReview review = review(REVIEW, SPACE, "OPEN");
+        stubReviewAndItem(review, memberItem(9L, "VIEWER", "PENDING"));
+        when(itemMapper.updateById(any(AccessReviewItem.class))).thenReturn(0);
+        when(itemMapper.selectCount(any())).thenReturn(0L);
+
+        assertThatThrownBy(() -> service.decide(SPACE, REVIEW, ITEM,
+                new AccessReviewDecisionRequest("CONFIRM", null), operator(2L)))
+                .isInstanceOfSatisfying(BizException.class, ex -> {
+                    assertThat(ex.getCode()).isEqualTo(409);
+                    assertThat(ex.getMessage()).contains("复核项");
+                });
+        verify(reviewMapper, never()).updateById(any(AccessReview.class));
+        verify(audit, never()).recordEvent(any(), any(), any(), any(), any(), any(), any(),
+                any(), any(), any(), any());
     }
 
     @Test
@@ -588,6 +812,26 @@ class AccessReviewServiceTest {
                 any(), any(), any(), any());
     }
 
+    private List<AccessReviewItem> stubGeneratePersistence() {
+        AtomicReference<AccessReview> saved = new AtomicReference<>();
+        when(reviewMapper.insert(any(AccessReview.class))).thenAnswer(invocation -> {
+            AccessReview inserted = invocation.getArgument(0);
+            inserted.setId(REVIEW);
+            saved.set(inserted);
+            return 1;
+        });
+        when(reviewMapper.selectById(REVIEW)).thenAnswer(invocation -> saved.get());
+        List<AccessReviewItem> insertedItems = new ArrayList<>();
+        when(itemMapper.insert(any(AccessReviewItem.class))).thenAnswer(invocation -> {
+            AccessReviewItem inserted = invocation.getArgument(0);
+            inserted.setId(100L + insertedItems.size());
+            insertedItems.add(inserted);
+            return 1;
+        });
+        when(itemMapper.selectList(any())).thenAnswer(invocation -> insertedItems);
+        return insertedItems;
+    }
+
     private void stubFindingQueries(List<AccessReviewReportBuilder.MemberSnapshot> members,
                                     List<AccessReviewReportBuilder.CredentialSnapshot> suppliers,
                                     List<AccessReviewReportBuilder.CredentialSnapshot> mcps,
@@ -613,6 +857,9 @@ class AccessReviewServiceTest {
     private void stubLiveRole(String role) {
         doAnswer(invocation -> {
             String sql = invocation.getArgument(0);
+            if (sql.contains("FOR UPDATE")) {
+                return List.of(REVIEW);
+            }
             if (sql.contains("SELECT role FROM king_ai_user_space")) {
                 return List.of(role);
             }

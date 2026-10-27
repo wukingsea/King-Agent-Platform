@@ -82,4 +82,19 @@ class AccessReviewReportBuilderTest {
         assertThat(findings.get(0).subjectType()).isEqualTo("MEMBER");
         assertThat(findings.get(0).role()).isEqualTo("VIEWER");
     }
+
+    @Test
+    void blankNicknameFallsBackToUsernameInsteadOfNullText() {
+        var findings = AccessReviewReportBuilder.build(
+                List.of(new AccessReviewReportBuilder.MemberSnapshot(1L, "alice", null,
+                                "VIEWER", NOW),
+                        new AccessReviewReportBuilder.MemberSnapshot(2L, "bob", "   ",
+                                "VIEWER", NOW)),
+                List.of(), List.of(), List.of(), NOW, 90);
+
+        assertThat(findings.get(0).name()).isEqualTo("alice (alice)");
+        assertThat(findings.get(1).name()).isEqualTo("bob (bob)");
+        assertThat(findings).extracting(AccessReviewReportBuilder.AccessFinding::name)
+                .allSatisfy(name -> assertThat(name).doesNotContain("null"));
+    }
 }
