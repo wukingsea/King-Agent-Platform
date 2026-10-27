@@ -66,4 +66,30 @@ class LocalRuleModeratorTest {
 
         assertThat(moderator.mask("前违禁词后", scan)).isEqualTo("前[已屏蔽]后");
     }
+
+    @Test
+    void maskMergesContainedHitsWhenShorterTermListedFirst() {
+        ModerationScan scan = moderator.scan("违禁词", List.of("违禁", "违禁词"));
+
+        assertThat(scan.hits()).hasSize(2);
+        assertThat(moderator.mask("违禁词", scan)).isEqualTo("[已屏蔽]");
+    }
+
+    @Test
+    void maskMergesContainedHitsWhenLongerTermListedFirst() {
+        ModerationScan scan = moderator.scan("违禁词", List.of("违禁词", "违禁"));
+
+        assertThat(scan.hits()).hasSize(2);
+        assertThat(moderator.mask("违禁词", scan)).isEqualTo("[已屏蔽]");
+    }
+
+    @Test
+    void maskMergesContainedHitsWithoutLeakingTail() {
+        ModerationScan scan = moderator.scan("违禁词句", List.of("违禁", "违禁词句"));
+
+        assertThat(scan.hits()).hasSize(2);
+        assertThat(moderator.mask("违禁词句", scan))
+                .isEqualTo("[已屏蔽]")
+                .doesNotContain("词句");
+    }
 }

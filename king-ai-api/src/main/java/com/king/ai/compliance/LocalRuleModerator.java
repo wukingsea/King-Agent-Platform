@@ -4,6 +4,7 @@ import org.springframework.stereotype.Component;
 
 import java.text.Normalizer;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -14,6 +15,7 @@ public class LocalRuleModerator {
 
     private static final Pattern URL = Pattern.compile("(?i)https?://\\S+");
     private static final Pattern REPEATED = Pattern.compile("(.)\\1{79,}");
+    private static final String MASK = "[已屏蔽]";
     private static final String IGNORABLE = "\u200B\u200C\u200D\uFEFF";
     private static final String SEPARATORS =
             " \t\r\n-_./\\|+*·,，。！？!?：:；;、\"'“”‘’()（）[]【】<>";
@@ -64,16 +66,46 @@ public class LocalRuleModerator {
         if (text == null || scan == null || scan.hits().isEmpty()) {
             return text == null ? "" : text;
         }
-        List<ModerationHit> hits = scan.hits().stream()
-                .sorted(java.util.Comparator.comparingInt(ModerationHit::start).reversed())
-                .toList();
+        List<ModerationHit> merged = mergeHits(scan.hits(), text.length());
         StringBuilder builder = new StringBuilder(text);
-        for (ModerationHit hit : hits) {
-            if (hit.start() >= 0 && hit.end() <= builder.length() && hit.start() < hit.end()) {
-                builder.replace(hit.start(), hit.end(), "[已屏蔽]");
-            }
+        for (int i = merged.size() - 1; i >= 0; i--) {
+            ModerationHit hit = merged.get(i);
+            builder.replace(hit.start(), hit.end(), MASK);
         }
         return builder.toString();
+    }
+
+    /**
+     * 合并重叠或包含的命中区间：先按 start 升序（同一 start 时 end 降序）排序，
+     * 与当前合并区间重叠的命中直接并入，避免短词先替换后长词再切片产生乱码或残留。
+     */
+    private static List<ModerationHit> mergeHits(List<ModerationHit> hits, int length) {
+        List<ModerationHit> sorted = hits.stream()
+                .filter(hit -> hit != null && hit.start() >= 0 && hit.start() < hit.end()
+                        && hit.end() <= length)
+                .sorted(Comparator.comparingInt(ModerationHit::start)
+                        .thenComparing(Comparator.comparingInt(ModerationHit::end).reversed()))
+                .toList();
+        List<ModerationHit> merged = new ArrayList<>(sorted.size());
+        int start = -1;
+        int end = -1;
+        String category = null;
+        for (ModerationHit hit : sorted) {
+            if (start >= 0 && hit.start() < end) {
+                end = Math.max(end, hit.end());
+                continue;
+            }
+            if (start >= 0) {
+                merged.add(new ModerationHit(category, start, end));
+            }
+            start = hit.start();
+            end = hit.end();
+            category = hit.category();
+        }
+        if (start >= 0) {
+            merged.add(new ModerationHit(category, start, end));
+        }
+        return merged;
     }
 
     private record Normalized(String compact, List<Integer> positions) {
