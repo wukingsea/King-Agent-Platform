@@ -1,0 +1,47 @@
+# Throwaway values for local kind clusters (chart smoke test only).
+# EVERY credential below is an obviously-fake kind-only literal that still
+# satisfies the values.schema.json min-length gates; never reuse them and
+# keep the chart defaults ("") for any real deployment.
+api:
+  replicaCount: 1
+  image:
+    tag: "kind"
+ui:
+  replicaCount: 1
+  image:
+    tag: "kind"
+autoscaling:
+  enabled: false
+pdb:
+  enabled: false
+networkPolicy:
+  enabled: false
+ingress:
+  enabled: false
+persistence:
+  exports:
+    enabled: true
+    mode: emptyDir
+migration:
+  # Dev mode runs Flyway inside the API (prod vs migrate profile split), so
+  # the kind smoke install does not need the pre-install migrate Job.
+  enabled: false
+devDependencies:
+  enabled: true
+  persistence:
+    enabled: false
+  mysql:
+    enabled: true
+  redis:
+    enabled: true
+  milvus:
+    enabled: false
+  secrets:
+    appSecret: "kind-only-app-secret-0123456789abcdef"
+    encryptionKey: "KindOnly-encryption-key-0123456789abcdef"
+    adminUsername: "kind-admin"
+    adminPassword: "KindOnly-admin-pass-0123"
+    mysqlPassword: "KindOnly-mysql-0123"
+    redisPassword: "KindOnly-redis-0123"
+    minioUser: "kindonly-minio"
+    minioPassword: "KindOnly-minio-0123"

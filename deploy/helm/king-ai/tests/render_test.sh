@@ -64,4 +64,21 @@ for needle in \
   fi
 done
 
+# Kind (bundled dev dependencies) render: the Opaque dev Secrets (hook-weight
+# -30, ahead of the service account -20 and the migrate Job -10), the
+# mysql/redis Service+Deployment pairs and the API_UPSTREAM env must render.
+helm template king-ai "$CHART_DIR" --namespace king-ai \
+  -f "$CHART_DIR/tests/values-kind.yaml" > "$WORK_DIR/rendered-kind.yaml"
+for needle in \
+  'name: king-ai-db' \
+  'name: king-ai-mysql' \
+  'name: king-ai-redis' \
+  'name: API_UPSTREAM' \
+  'helm.sh/hook-weight: "-30"'; do
+  if ! grep -qF -- "$needle" "$WORK_DIR/rendered-kind.yaml"; then
+    echo "ASSERT FAILED: missing $needle in kind render" >&2
+    exit 1
+  fi
+done
+
 echo "render tests passed"

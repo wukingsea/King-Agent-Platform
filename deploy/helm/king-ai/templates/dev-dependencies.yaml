@@ -1,0 +1,491 @@
+{{- if .Values.devDependencies.enabled }}
+{{- $fullname := include "king-ai.fullname" . }}
+{{- $mysqlName := printf "%s-mysql" $fullname | trunc 63 | trimSuffix "-" }}
+{{- $redisName := printf "%s-redis" $fullname | trunc 63 | trimSuffix "-" }}
+{{- $etcdName := printf "%s-etcd" $fullname | trunc 63 | trimSuffix "-" }}
+{{- $minioName := printf "%s-minio" $fullname | trunc 63 | trimSuffix "-" }}
+{{- $milvusName := printf "%s-milvus" $fullname | trunc 63 | trimSuffix "-" }}
+# Bundled development dependencies. Never enable in production.
+# The credential Secrets below are hook-annotated at weight -30 so they are
+# created before the service account (-20) and the pre-install migrate Job
+# (-10), making a devDependencies+migration.enabled install actually work.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "king-ai.dbSecretName" . }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+type: Opaque
+stringData:
+  {{ .Values.externalDatabase.usernameKey }}: king
+  {{ .Values.externalDatabase.passwordKey }}: {{ required "devDependencies.secrets.mysqlPassword is required when devDependencies.enabled" .Values.devDependencies.secrets.mysqlPassword | quote }}
+  root-password: {{ required "devDependencies.secrets.mysqlPassword is required when devDependencies.enabled" .Values.devDependencies.secrets.mysqlPassword | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "king-ai.redisSecretName" . }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+type: Opaque
+stringData:
+  {{ .Values.externalRedis.passwordKey }}: {{ required "devDependencies.secrets.redisPassword is required when devDependencies.enabled" .Values.devDependencies.secrets.redisPassword | quote }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "king-ai.appSecretName" . }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+type: Opaque
+stringData:
+  {{ .Values.appSecret.secretKey }}: {{ required "devDependencies.secrets.appSecret is required when devDependencies.enabled" .Values.devDependencies.secrets.appSecret | quote }}
+  {{ .Values.appSecret.encryptionKeyKey }}: {{ required "devDependencies.secrets.encryptionKey is required when devDependencies.enabled" .Values.devDependencies.secrets.encryptionKey | quote }}
+  {{ .Values.appSecret.previousKeysKey }}: ""
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "king-ai.adminSecretName" . }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+type: Opaque
+stringData:
+  {{ .Values.adminSecret.usernameKey }}: {{ .Values.devDependencies.secrets.adminUsername | quote }}
+  {{ .Values.adminSecret.passwordKey }}: {{ required "devDependencies.secrets.adminPassword is required when devDependencies.enabled" .Values.devDependencies.secrets.adminPassword | quote }}
+{{- if .Values.devDependencies.mysql.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $mysqlName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+spec:
+  type: ClusterIP
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: mysql
+  selector:
+    {{- include "king-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $mysqlName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "king-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mysql
+  template:
+    metadata:
+      labels:
+        {{- include "king-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mysql
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: mysql
+          image: "{{ .Values.devDependencies.mysql.image }}"
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "king-ai.dbSecretName" . }}
+                  key: root-password
+            - name: MYSQL_DATABASE
+              value: {{ .Values.externalDatabase.database | quote }}
+            - name: MYSQL_ROOT_HOST
+              value: "%"
+            - name: MYSQL_USER
+              value: king
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "king-ai.dbSecretName" . }}
+                  key: {{ .Values.externalDatabase.passwordKey }}
+          ports:
+            - name: mysql
+              containerPort: 3306
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - mysqladmin ping -h 127.0.0.1 -u root -p"$MYSQL_ROOT_PASSWORD"
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+      volumes:
+        - name: data
+          {{- if .Values.devDependencies.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $mysqlName }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+{{- if .Values.devDependencies.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $mysqlName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.devDependencies.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.devDependencies.persistence.size }}
+{{- end }}
+{{- end }}
+{{- if .Values.devDependencies.redis.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $redisName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+  selector:
+    {{- include "king-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $redisName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "king-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: redis
+  template:
+    metadata:
+      labels:
+        {{- include "king-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: redis
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: redis
+          image: "{{ .Values.devDependencies.redis.image }}"
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - exec redis-server --requirepass "$REDIS_PASSWORD"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "king-ai.redisSecretName" . }}
+                  key: {{ .Values.externalRedis.passwordKey }}
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - redis-cli -a "$REDIS_PASSWORD" ping | grep -q PONG
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+{{- end }}
+{{- if .Values.devDependencies.milvus.enabled }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $minioName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-30"
+    helm.sh/hook-delete-policy: before-hook-creation
+type: Opaque
+stringData:
+  user: {{ required "devDependencies.secrets.minioUser is required when devDependencies.milvus.enabled" .Values.devDependencies.secrets.minioUser | quote }}
+  password: {{ required "devDependencies.secrets.minioPassword is required when devDependencies.milvus.enabled" .Values.devDependencies.secrets.minioPassword | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $etcdName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+spec:
+  type: ClusterIP
+  ports:
+    - name: client
+      port: 2379
+      targetPort: client
+  selector:
+    {{- include "king-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $etcdName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "king-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: milvus
+  template:
+    metadata:
+      labels:
+        {{- include "king-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: milvus
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: etcd
+          image: "{{ .Values.devDependencies.milvus.etcdImage }}"
+          imagePullPolicy: IfNotPresent
+          command:
+            - etcd
+            - -advertise-client-urls=http://0.0.0.0:2379
+            - -listen-client-urls=http://0.0.0.0:2379
+            - --data-dir=/var/run/etcd
+          ports:
+            - name: client
+              containerPort: 2379
+          volumeMounts:
+            - name: data
+              mountPath: /var/run/etcd
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $minioName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+spec:
+  type: ClusterIP
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+  selector:
+    {{- include "king-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $minioName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "king-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: milvus
+  template:
+    metadata:
+      labels:
+        {{- include "king-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: milvus
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: minio
+          image: "{{ .Values.devDependencies.milvus.minioImage }}"
+          imagePullPolicy: IfNotPresent
+          args: ["server", "/data"]
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $minioName }}
+                  key: user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $minioName }}
+                  key: password
+          ports:
+            - name: s3
+              containerPort: 9000
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+          readinessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $milvusName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+spec:
+  type: ClusterIP
+  ports:
+    - name: grpc
+      port: 19530
+      targetPort: grpc
+    - name: health
+      port: 9091
+      targetPort: health
+  selector:
+    {{- include "king-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $milvusName }}
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: milvus
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "king-ai.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: milvus
+  template:
+    metadata:
+      labels:
+        {{- include "king-ai.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: milvus
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: milvus
+          image: "{{ .Values.devDependencies.milvus.image }}"
+          imagePullPolicy: IfNotPresent
+          command: ["milvus", "run", "standalone"]
+          env:
+            - name: ETCD_ENDPOINTS
+              value: {{ printf "%s:2379" $etcdName | quote }}
+            - name: MINIO_ADDRESS
+              value: {{ printf "%s:9000" $minioName | quote }}
+            - name: MINIO_ACCESSKEYID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $minioName }}
+                  key: user
+            - name: MINIO_SECRETACCESSKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $minioName }}
+                  key: password
+          ports:
+            - name: grpc
+              containerPort: 19530
+            - name: health
+              containerPort: 9091
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/milvus
+      volumes:
+        - name: data
+          emptyDir: {}
+{{- end }}
+{{- end }}
