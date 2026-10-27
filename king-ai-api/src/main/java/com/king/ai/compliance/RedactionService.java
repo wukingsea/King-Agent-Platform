@@ -2,8 +2,10 @@ package com.king.ai.compliance;
 
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -12,6 +14,12 @@ import java.util.regex.Pattern;
 public class RedactionService {
 
     private static final int MAX_SCAN_CHARS = 200_000;
+
+    private static final long MAX_REGEX_STEPS = 5_000_000L;
+
+    private static final ComplianceSettings DEFAULT_SETTINGS = new ComplianceSettings(
+            true, ModerationMode.OFF, ModerationAction.BLOCK, ModerationAction.BLOCK,
+            List.of(), List.of(), 128);
 
     private static final List<RedactionRule> BUILT_IN = List.of(
             new RedactionRule("email", "EMAIL",
@@ -40,32 +48,44 @@ public class RedactionService {
     );
 
     public RedactionResult redact(String text, ComplianceSettings settings) {
-        if (text == null || text.isEmpty() || settings == null || !settings.piiEnabled()) {
-            return new RedactionResult(text == null ? "" : text, List.of());
+        if (text == null || text.isEmpty()) {
+            return new RedactionResult("", List.of());
         }
-        String scan = text.length() > MAX_SCAN_CHARS ? text.substring(0, MAX_SCAN_CHARS) : text;
+        ComplianceSettings effective = settings == null ? DEFAULT_SETTINGS : settings;
+        if (!effective.piiEnabled()) {
+            return new RedactionResult(text, List.of());
+        }
+        if (text.length() > MAX_SCAN_CHARS) {
+            return new RedactionResult("[REDACTED:OVERSIZE]",
+                    List.of(new RedactionHit("oversize", "OVERSIZE", 0, text.length())));
+        }
         List<RedactionRule> rules = new ArrayList<>(BUILT_IN);
-        int index = 0;
-        for (Pattern pattern : settings.customPiiPatterns()) {
-            index++;
-            rules.add(new RedactionRule("custom-" + index, "CUSTOM", pattern, value -> true,
+        int customRuleCount = 0;
+        for (Pattern pattern : effective.customPiiPatterns()) {
+            customRuleCount++;
+            if (hasUnboundedNestedQuantifier(pattern)) {
+                return regexLimitResult(text);
+            }
+            rules.add(new RedactionRule("custom-" + customRuleCount, "CUSTOM", pattern, value -> true,
                     "[REDACTED:CUSTOM]"));
         }
-        List<RedactionHit> hits = findHits(scan, rules);
+        List<RedactionHit> hits;
+        try {
+            hits = findHits(text, rules, customRuleCount);
+        } catch (RegexBudgetExceededException ex) {
+            return regexLimitResult(text);
+        }
         if (hits.isEmpty()) {
             return new RedactionResult(text, List.of());
         }
-        StringBuilder output = new StringBuilder(scan.length());
+        StringBuilder output = new StringBuilder(text.length());
         int cursor = 0;
         for (RedactionHit hit : hits) {
-            output.append(scan, cursor, hit.start());
+            output.append(text, cursor, hit.start());
             output.append(replacement(rules, hit));
             cursor = hit.end();
         }
-        output.append(scan, cursor, scan.length());
-        if (text.length() > MAX_SCAN_CHARS) {
-            output.append(text, MAX_SCAN_CHARS, text.length());
-        }
+        output.append(text, cursor, text.length());
         return new RedactionResult(output.toString(), hits);
     }
 
@@ -74,11 +94,134 @@ public class RedactionService {
                 .findFirst().map(RedactionRule::replacement).orElse("[REDACTED]");
     }
 
-    private static List<RedactionHit> findHits(String text, List<RedactionRule> rules) {
+    private static RedactionResult regexLimitResult(String text) {
+        return new RedactionResult("[REDACTED:REGEX_LIMIT]",
+                List.of(new RedactionHit("regex-limit", "REGEX_LIMIT", 0, text.length())));
+    }
+
+    /**
+     * Rejects custom patterns whose worst case is unbounded: an unbounded quantifier applied to a
+     * group that itself contains an unbounded quantifier. The JDK regex engine resolves some of
+     * these shapes quickly, but the class is a classic super-linear backtracking hazard and a
+     * fail-closed scan must not depend on engine-specific optimizations.
+     */
+    private static boolean hasUnboundedNestedQuantifier(Pattern pattern) {
+        String regex = pattern.pattern();
+        Deque<Boolean> groupUnbounded = new ArrayDeque<>();
+        Deque<Boolean> atomicGroup = new ArrayDeque<>();
+        boolean inClass = false;
+        for (int i = 0; i < regex.length(); i++) {
+            char c = regex.charAt(i);
+            if (c == '\\') {
+                i++;
+                continue;
+            }
+            if (inClass) {
+                if (c == ']') {
+                    inClass = false;
+                }
+                continue;
+            }
+            if (c == '[') {
+                inClass = true;
+                continue;
+            }
+            if (c == '(') {
+                atomicGroup.push(regex.startsWith("(?>", i));
+                groupUnbounded.push(false);
+                continue;
+            }
+            if (c == ')') {
+                if (groupUnbounded.isEmpty()) {
+                    continue;
+                }
+                boolean unbounded = groupUnbounded.pop();
+                boolean atomic = atomicGroup.pop();
+                int next = i + 1;
+                if (next < regex.length() && isUnboundedQuantifierStart(regex, next)) {
+                    int end = quantifierEnd(regex, next);
+                    boolean possessive = end < regex.length() && regex.charAt(end) == '+';
+                    if (!possessive && !atomic && unbounded) {
+                        return true;
+                    }
+                }
+                if (!atomic && unbounded && !groupUnbounded.isEmpty()) {
+                    groupUnbounded.pop();
+                    groupUnbounded.push(true);
+                }
+                continue;
+            }
+            if (c == '*' || c == '+') {
+                if (i + 1 < regex.length() && regex.charAt(i + 1) == '+') {
+                    i++;
+                    continue;
+                }
+                markUnbounded(groupUnbounded);
+                continue;
+            }
+            if (c == '{') {
+                int close = regex.indexOf('}', i + 1);
+                if (close > 0) {
+                    String body = regex.substring(i + 1, close);
+                    if (body.matches("\\d+(,\\d*)?")) {
+                        if (body.endsWith(",")) {
+                            boolean possessive = close + 1 < regex.length() && regex.charAt(close + 1) == '+';
+                            if (!possessive) {
+                                markUnbounded(groupUnbounded);
+                            }
+                            if (possessive) {
+                                close++;
+                            }
+                        }
+                        i = close;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private static void markUnbounded(Deque<Boolean> groupUnbounded) {
+        if (groupUnbounded.isEmpty()) {
+            return;
+        }
+        groupUnbounded.pop();
+        groupUnbounded.push(true);
+    }
+
+    private static boolean isUnboundedQuantifierStart(String regex, int start) {
+        char c = regex.charAt(start);
+        if (c == '*' || c == '+') {
+            return true;
+        }
+        if (c != '{') {
+            return false;
+        }
+        int close = regex.indexOf('}', start + 1);
+        return close > 0 && regex.substring(start + 1, close).matches("\\d+,");
+    }
+
+    private static int quantifierEnd(String regex, int start) {
+        char c = regex.charAt(start);
+        if (c == '*' || c == '+') {
+            return start + 1;
+        }
+        int close = regex.indexOf('}', start + 1);
+        return close < 0 ? start + 1 : close + 1;
+    }
+
+    private static List<RedactionHit> findHits(String text, List<RedactionRule> rules, int customRuleCount) {
+        int builtInCount = rules.size() - customRuleCount;
         List<RedactionHit> candidates = new ArrayList<>();
-        for (RedactionRule rule : rules) {
-            Matcher matcher = rule.pattern().matcher(text);
+        for (int i = 0; i < rules.size(); i++) {
+            RedactionRule rule = rules.get(i);
+            Matcher matcher = i < builtInCount
+                    ? rule.pattern().matcher(text)
+                    : rule.pattern().matcher(new BudgetedCharSequence(text));
             while (matcher.find()) {
+                if (matcher.group().isEmpty()) {
+                    continue;
+                }
                 if (!rule.accepts(matcher.group())) {
                     continue;
                 }
@@ -146,5 +289,46 @@ public class RedactionService {
             }
         }
         return parts.length == 4;
+    }
+
+    private static final class BudgetedCharSequence implements CharSequence {
+
+        private final CharSequence delegate;
+
+        private long steps;
+
+        private BudgetedCharSequence(CharSequence delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public int length() {
+            return delegate.length();
+        }
+
+        @Override
+        public char charAt(int index) {
+            if (++steps > MAX_REGEX_STEPS) {
+                throw new RegexBudgetExceededException();
+            }
+            return delegate.charAt(index);
+        }
+
+        @Override
+        public CharSequence subSequence(int start, int end) {
+            return delegate.subSequence(start, end);
+        }
+
+        @Override
+        public String toString() {
+            return delegate.toString();
+        }
+    }
+
+    private static final class RegexBudgetExceededException extends RuntimeException {
+
+        private RegexBudgetExceededException() {
+            super(null, null, false, false);
+        }
     }
 }

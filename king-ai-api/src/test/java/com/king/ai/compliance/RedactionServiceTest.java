@@ -82,4 +82,85 @@ class RedactionServiceTest {
         assertThat(service.redact("", enabled()).text()).isEmpty();
         assertThat(service.redact(null, enabled()).text()).isEmpty();
     }
+
+    @Test
+    void reportsRuleMetadataAndOffsetsForPhoneMatch() {
+        RedactionResult result = service.redact("tel 13812345678 end", enabled());
+
+        assertThat(result.text()).isEqualTo("tel [REDACTED:PHONE] end");
+        assertThat(result.hits()).singleElement().satisfies(hit -> {
+            assertThat(hit.ruleId()).isEqualTo("cn-mobile");
+            assertThat(hit.category()).isEqualTo("PHONE");
+            assertThat(hit.start()).isEqualTo(4);
+            assertThat(hit.end()).isEqualTo(15);
+        });
+    }
+
+    @Test
+    void keepsLongerCustomMatchWithSameStart() {
+        RedactionResult result = service.redact("EMP-123456",
+                enabled("EMP-\\d{6}", "\\d{6}"));
+
+        assertThat(result.text()).isEqualTo("[REDACTED:CUSTOM]");
+        assertThat(result.hits()).singleElement()
+                .satisfies(hit -> assertThat(hit.ruleId()).isEqualTo("custom-1"));
+    }
+
+    @Test
+    void redactsValidIpv4AndKeepsInvalidIpv4() {
+        RedactionResult result = service.redact("ip 1.2.3.4 bad 999.1.1.1", enabled());
+
+        assertThat(result.text()).isEqualTo("ip [REDACTED:IP] bad 999.1.1.1");
+        assertThat(result.text()).doesNotContain("1.2.3.4");
+        assertThat(result.hits()).singleElement()
+                .satisfies(hit -> assertThat(hit.category()).isEqualTo("IP"));
+    }
+
+    @Test
+    void zeroWidthCustomPatternDoesNotDuplicateTokens() {
+        RedactionResult result = service.redact("abc", enabled(".*"));
+
+        assertThat(result.text()).isEqualTo("[REDACTED:CUSTOM]");
+        assertThat(result.hits()).singleElement()
+                .satisfies(hit -> assertThat(hit.ruleId()).isEqualTo("custom-1"));
+    }
+
+    @Test
+    void oversizeInputFailsClosed() {
+        String text = "x".repeat(199_990) + "13812345678";
+        assertThat(text).hasSize(200_001);
+
+        RedactionResult result = service.redact(text, enabled());
+
+        assertThat(result.text()).isEqualTo("[REDACTED:OVERSIZE]");
+        assertThat(result.text()).doesNotContain("13812345678");
+        assertThat(result.hits()).singleElement().satisfies(hit -> {
+            assertThat(hit.ruleId()).isEqualTo("oversize");
+            assertThat(hit.category()).isEqualTo("OVERSIZE");
+            assertThat(hit.start()).isZero();
+            assertThat(hit.end()).isEqualTo(text.length());
+        });
+    }
+
+    @Test
+    void nullSettingsTreatsPiiAsEnabled() {
+        RedactionResult result = service.redact("13812345678", null);
+
+        assertThat(result.text()).isEqualTo("[REDACTED:PHONE]");
+    }
+
+    @Test
+    void pathologicalCustomPatternFailsClosed() {
+        String text = "a".repeat(64) + "!";
+
+        RedactionResult result = service.redact(text, enabled("(a+)+$"));
+
+        assertThat(result.text()).isEqualTo("[REDACTED:REGEX_LIMIT]");
+        assertThat(result.hits()).singleElement().satisfies(hit -> {
+            assertThat(hit.ruleId()).isEqualTo("regex-limit");
+            assertThat(hit.category()).isEqualTo("REGEX_LIMIT");
+            assertThat(hit.start()).isZero();
+            assertThat(hit.end()).isEqualTo(text.length());
+        });
+    }
 }
