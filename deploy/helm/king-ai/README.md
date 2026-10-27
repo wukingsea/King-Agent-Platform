@@ -49,7 +49,6 @@ curl -fsS https://ai.example.com/api/health
 
 ## 开发集群
 ```bash
-kind create cluster --name king-ai-e2e
 deploy/helm/king-ai/tests/kind-e2e.sh
 ```
 
