@@ -65,6 +65,25 @@ class ExportSinkTest {
     }
 
     @Test
+    void neutralizesCarriageReturnAndRendersEmptyCells() throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (ExportSink sink = ExportSinkFactory.open(out, ExportFormat.CSV,
+                List.of("id", "text"), new ObjectMapper())) {
+            sink.row(Map.of("id", 1, "text", "\r=cmd"));
+            sink.row(Map.of("id", 2));
+            sink.row(Map.of("id", 3, "text", ""));
+        }
+
+        String[] lines = out.toString(StandardCharsets.UTF_8).split("\n", -1);
+        // CR-prefixed value: the neutralizer prepends "'", then RFC4180 quotes the CR cell.
+        assertThat(lines[1]).isEqualTo("1,\"'\r=cmd\"");
+        // Missing (null) value renders as an empty cell, with no stray "'" prefix.
+        assertThat(lines[2]).isEqualTo("2,");
+        // Empty string renders as an empty cell too.
+        assertThat(lines[3]).isEqualTo("3,");
+    }
+
+    @Test
     void neutralizesFormulaInjectionInHeader() throws Exception {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (ExportSink sink = ExportSinkFactory.open(out, ExportFormat.CSV,
