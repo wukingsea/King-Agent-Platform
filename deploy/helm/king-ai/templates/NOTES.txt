@@ -3,8 +3,8 @@ King AI Platform {{ .Chart.AppVersion }} installed as release {{ .Release.Name }
 {{- if .Values.ingress.enabled }}
 URL: {{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}
 {{- else }}
-API: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "king-ai.fullname" . }}-api 8080:8080
-UI:  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "king-ai.fullname" . }}-ui 8080:8080
+API: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "king-ai.apiName" . }} 8080:8080
+UI:  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "king-ai.uiName" . }} 8080:8080
 {{- end }}
 
 Required secrets:
@@ -13,6 +13,6 @@ Required secrets:
   database: {{ include "king-ai.dbSecretName" . }}
   redis:    {{ include "king-ai.redisSecretName" . }}
 
-Migration job enabled: {{ .Values.migration.enabled }}
+Migration job enabled: {{ .Values.migration.enabled }} (Job name: {{ include "king-ai.fullname" . }}-migrate)
 Network policy enabled: {{ .Values.networkPolicy.enabled }} (configure egress CIDRs for external dependencies)
 Exports PVC mode: {{ .Values.persistence.exports.mode }}

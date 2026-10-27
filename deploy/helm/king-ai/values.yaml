@@ -139,9 +139,14 @@ persistence:
     mode: pvc
     size: 20Gi
     storageClass: ""
+    # ReadWriteMany requires an RWX-capable StorageClass (NFS, CephFS, EFS, ...).
+    # Many private clusters only provide RWO classes; set accessMode: ReadWriteOnce
+    # if you run a single API replica or accept exports being pinned to one node.
     accessMode: ReadWriteMany
 
 migration:
+  # Runs as the Job "<fullname>-migrate" (templates land in a later stage task)
+  # executing SPRING_PROFILES_ACTIVE=prod,migrate before the API Deployment rolls.
   enabled: true
   backoffLimit: 0
   activeDeadlineSeconds: 600

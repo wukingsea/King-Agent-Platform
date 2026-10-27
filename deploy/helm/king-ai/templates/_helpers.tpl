@@ -36,9 +36,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{/* Component resource names must stay within the 63-char limit even when the
+     release name is long, so every "fullname-suffix" composition truncates. */}}
+{{- define "king-ai.apiName" -}}
+{{- printf "%s-api" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
+{{- define "king-ai.uiName" -}}
+{{- printf "%s-ui" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "king-ai.dbSecretName" -}}
 {{- if .Values.devDependencies.enabled -}}
-{{- printf "%s-db" (include "king-ai.fullname" .) -}}
+{{- printf "%s-db" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
 {{- required "externalDatabase.existingSecret is required" .Values.externalDatabase.existingSecret -}}
 {{- end -}}
@@ -46,7 +56,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "king-ai.redisSecretName" -}}
 {{- if .Values.devDependencies.enabled -}}
-{{- printf "%s-redis" (include "king-ai.fullname" .) -}}
+{{- printf "%s-redis" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
 {{- required "externalRedis.existingSecret is required" .Values.externalRedis.existingSecret -}}
 {{- end -}}
@@ -54,7 +64,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "king-ai.appSecretName" -}}
 {{- if .Values.devDependencies.enabled -}}
-{{- printf "%s-app" (include "king-ai.fullname" .) -}}
+{{- printf "%s-app" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
 {{- required "appSecret.existingSecret is required" .Values.appSecret.existingSecret -}}
 {{- end -}}
@@ -62,7 +72,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "king-ai.adminSecretName" -}}
 {{- if .Values.devDependencies.enabled -}}
-{{- printf "%s-admin" (include "king-ai.fullname" .) -}}
+{{- printf "%s-admin" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
 {{- required "adminSecret.existingSecret is required" .Values.adminSecret.existingSecret -}}
 {{- end -}}
@@ -70,7 +80,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "king-ai.dbHost" -}}
 {{- if and .Values.devDependencies.enabled .Values.devDependencies.mysql.enabled -}}
-{{- printf "%s-mysql" (include "king-ai.fullname" .) -}}
+{{- printf "%s-mysql" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
 {{- required "externalDatabase.host is required" .Values.externalDatabase.host -}}
 {{- end -}}
@@ -78,7 +88,7 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "king-ai.redisHost" -}}
 {{- if and .Values.devDependencies.enabled .Values.devDependencies.redis.enabled -}}
-{{- printf "%s-redis" (include "king-ai.fullname" .) -}}
+{{- printf "%s-redis" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
 {{- required "externalRedis.host is required" .Values.externalRedis.host -}}
 {{- end -}}
@@ -86,10 +96,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "king-ai.milvusUrl" -}}
 {{- if and .Values.devDependencies.enabled .Values.devDependencies.milvus.enabled -}}
-{{- printf "http://%s-milvus:19530" (include "king-ai.fullname" .) -}}
+{{- printf "http://%s:19530" (include "king-ai.milvusName" .) -}}
 {{- else -}}
 {{- required "externalMilvus.url is required" .Values.externalMilvus.url -}}
 {{- end -}}
+{{- end -}}
+
+{{- define "king-ai.milvusName" -}}
+{{- printf "%s-milvus" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
 {{- define "king-ai.dbEnv" -}}
