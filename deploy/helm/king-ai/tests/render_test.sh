@@ -31,5 +31,18 @@ assert_contains 'runAsNonRoot: true'
 assert_contains '/actuator/health/liveness'
 assert_contains '/actuator/health/readiness'
 assert_contains 'name: API_UPSTREAM'
+assert_contains 'helm.sh/hook: pre-install,pre-upgrade'
+assert_contains 'value: prod,migrate'
+assert_contains 'kind: PersistentVolumeClaim'
+
+# With migration disabled and exports on emptyDir neither the Job nor the
+# PVC may render (controller ruling: fold the plan's negative check in here).
+helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set migration.enabled=false \
+  --set persistence.exports.mode=emptyDir > "$WORK_DIR/rendered-disabled.yaml"
+if grep -qE 'kind: (Job|PersistentVolumeClaim)' "$WORK_DIR/rendered-disabled.yaml"; then
+  echo "ASSERT FAILED: Job or PVC rendered with migration.enabled=false and exports.mode=emptyDir" >&2
+  exit 1
+fi
 
 echo "render tests passed"

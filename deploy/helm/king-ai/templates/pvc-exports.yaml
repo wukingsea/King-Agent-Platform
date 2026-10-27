@@ -1,0 +1,18 @@
+{{- if and .Values.persistence.exports.enabled (eq .Values.persistence.exports.mode "pvc") }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "king-ai.fullname" . }}-exports
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  accessModes:
+    - {{ .Values.persistence.exports.accessMode | quote }}
+  {{- with .Values.persistence.exports.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.exports.size }}
+{{- end }}

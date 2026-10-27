@@ -46,6 +46,10 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-ui" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
+{{- define "king-ai.migrateName" -}}
+{{- printf "%s-migrate" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+
 {{- define "king-ai.dbSecretName" -}}
 {{- if .Values.devDependencies.enabled -}}
 {{- printf "%s-db" (include "king-ai.fullname" .) | trunc 63 | trimSuffix "-" -}}

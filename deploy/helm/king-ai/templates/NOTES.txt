@@ -13,6 +13,6 @@ Required secrets:
   database: {{ include "king-ai.dbSecretName" . }}
   redis:    {{ include "king-ai.redisSecretName" . }}
 
-Migration job enabled: {{ .Values.migration.enabled }} (Job name: {{ include "king-ai.fullname" . }}-migrate)
+Migration job enabled: {{ .Values.migration.enabled }} (Job name: {{ include "king-ai.migrateName" . }})
 Network policy enabled: {{ .Values.networkPolicy.enabled }} (configure egress CIDRs for external dependencies)
 Exports PVC mode: {{ .Values.persistence.exports.mode }}
