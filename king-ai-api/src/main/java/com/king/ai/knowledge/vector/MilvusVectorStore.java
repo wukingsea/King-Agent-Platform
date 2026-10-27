@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.king.ai.common.Texts;
 import com.king.ai.config.KingAiProperties;
 import com.king.ai.knowledge.entity.KnowledgeBase;
+import com.king.ai.observability.KnowledgeMetrics;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -37,9 +38,11 @@ public class MilvusVectorStore implements VectorStore {
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private final String token;
+    private final KnowledgeMetrics metrics;
     private final Set<String> readyCollections = ConcurrentHashMap.newKeySet();
 
-    public MilvusVectorStore(OkHttpClient httpClient, ObjectMapper objectMapper, KingAiProperties properties) {
+    public MilvusVectorStore(OkHttpClient httpClient, ObjectMapper objectMapper,
+                             KingAiProperties properties, KnowledgeMetrics metrics) {
         int timeout = Math.max(5, properties.getMilvus().getTimeoutSeconds());
         this.httpClient = httpClient.newBuilder()
                 .callTimeout(Duration.ofSeconds(timeout))
@@ -54,6 +57,7 @@ public class MilvusVectorStore implements VectorStore {
         }
         this.baseUrl = base;
         this.token = properties.getMilvus().getToken();
+        this.metrics = metrics;
     }
 
     @Override
@@ -188,6 +192,9 @@ public class MilvusVectorStore implements VectorStore {
     }
 
     private JsonNode post(String path, ObjectNode body, boolean failOnError) {
+        String operation = operationOf(path);
+        long startedAt = System.nanoTime();
+        String status = "success";
         Request.Builder builder = new Request.Builder()
                 .url(baseUrl + path)
                 .header("Content-Type", "application/json")
@@ -204,22 +211,34 @@ public class MilvusVectorStore implements VectorStore {
                 try {
                     root = objectMapper.readTree(text);
                 } catch (Exception ex) {
+                    status = failOnError ? "error" : "ignored";
                     if (failOnError) {
-                        throw new VectorStoreException("Milvus 返回了无法解析的响应（HTTP " + response.code() + "）");
+                        throw new VectorStoreException("Milvus 返回了无法解析的响应（HTTP "
+                                + response.code() + "）");
                     }
                 }
             }
             if (!response.isSuccessful() || !isSuccess(root)) {
+                status = failOnError ? "error" : "ignored";
                 if (failOnError) {
                     String message = root == null ? Texts.oneLine(text, 500)
                             : Texts.oneLine(root.path("message").asText(root.toString()), 500);
-                    throw new VectorStoreException("Milvus 请求失败（HTTP " + response.code() + "）：" + message);
+                    throw new VectorStoreException("Milvus 请求失败（HTTP " + response.code()
+                            + "）：" + message);
                 }
             }
             return root == null ? objectMapper.createObjectNode() : root;
         } catch (IOException ex) {
+            status = "error";
             throw new VectorStoreException("Milvus 连接失败：" + ex.getMessage(), ex);
+        } finally {
+            metrics.milvusRequest(operation, status, System.nanoTime() - startedAt);
         }
+    }
+
+    private static String operationOf(String path) {
+        int index = path.lastIndexOf('/');
+        return index < 0 || index == path.length() - 1 ? path : path.substring(index + 1);
     }
 
     private static boolean isSuccess(JsonNode root) {
