@@ -38,6 +38,11 @@ public class RetentionPolicyService {
                 || request.retentionDays() > MAX_RETENTION_DAYS) {
             throw BizException.badRequest("保留天数必须在 1–3650 之间");
         }
+        boolean archive = !Boolean.FALSE.equals(request.archiveBeforeDelete());
+        if (archive && (type == RetentionType.MESSAGE || type == RetentionType.AUDIT)) {
+            // 当前仅 SESSION 支持删除前归档，避免配置被静默忽略后直接删除数据。
+            throw BizException.badRequest("MESSAGE/AUDIT 保留策略暂不支持删除前归档");
+        }
         RetentionPolicy policy = mapper.selectOne(new LambdaQueryWrapper<RetentionPolicy>()
                 .eq(RetentionPolicy::getSpaceId, spaceId)
                 .eq(RetentionPolicy::getResourceType, type.name()).last("LIMIT 1"));

@@ -23,7 +23,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.zip.GZIPOutputStream;
 
 /**
@@ -65,22 +64,33 @@ public class RetentionJob {
     }
 
     public void purge(Long spaceId, RetentionPolicy policy, boolean dryRun, Long operatorId) {
-        RetentionType type = RetentionType.valueOf(policy.getResourceType());
         int days = policy.getRetentionDays() == null ? 1 : policy.getRetentionDays();
         LocalDateTime cutoff = RetentionPolicyEvaluator.cutoff(LocalDateTime.now(), days);
-        int deleted = switch (type) {
-            case SESSION -> purgeSessions(spaceId, cutoff, policy, dryRun);
-            case MESSAGE -> purgeMessages(spaceId, cutoff, dryRun);
-            case AUDIT -> purgeAudit(spaceId, cutoff, dryRun);
-            case EXPORT -> purgeExports(spaceId, dryRun);
-        };
-        auditLogService.recordEvent(spaceId, operatorId == null ? 0L : operatorId, "SYSTEM",
-                "compliance.retention", "retention", type.name(),
-                AuditLogService.STATUS_SUCCESS,
-                "deleted=" + deleted + ", dryRun=" + dryRun + ", cutoff=" + cutoff,
-                null, null, null);
-        meterRegistry.counter("king.ai.compliance.retention.deleted",
-                "type", type.name()).increment(deleted);
+        try {
+            RetentionType type = RetentionType.valueOf(policy.getResourceType());
+            int deleted = switch (type) {
+                case SESSION -> purgeSessions(spaceId, cutoff, policy, dryRun);
+                case MESSAGE -> purgeMessages(spaceId, cutoff, dryRun);
+                case AUDIT -> purgeAudit(spaceId, cutoff, dryRun);
+                case EXPORT -> purgeExports(spaceId, dryRun);
+            };
+            auditLogService.recordEvent(spaceId, operatorId == null ? 0L : operatorId, "SYSTEM",
+                    "compliance.retention", "retention", type.name(),
+                    AuditLogService.STATUS_SUCCESS,
+                    "deleted=" + deleted + ", dryRun=" + dryRun + ", cutoff=" + cutoff,
+                    null, null, null);
+            meterRegistry.counter("king.ai.compliance.retention.deleted",
+                    "type", type.name(), "dryRun", Boolean.toString(dryRun)).increment(deleted);
+        } catch (RuntimeException ex) {
+            // 清理中途失败时必须留下失败证据，否则审计会误报为成功；异常继续上抛由调度器记录。
+            auditLogService.recordEvent(spaceId, operatorId == null ? 0L : operatorId, "SYSTEM",
+                    "compliance.retention", "retention", policy.getResourceType(),
+                    AuditLogService.STATUS_FAILURE,
+                    "dryRun=" + dryRun + ", cutoff=" + cutoff
+                            + ", error=" + ex.getClass().getSimpleName(),
+                    null, null, null);
+            throw ex;
+        }
     }
 
     /**
@@ -94,6 +104,7 @@ public class RetentionJob {
         int total = 0;
         long lastId = 0L;
         int batch = batchSize();
+        boolean truncated = true;
         for (int round = 0; round < maxBatches(); round++) {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                     "SELECT id FROM king_ai_chat_session WHERE space_id = ? "
@@ -101,6 +112,7 @@ public class RetentionJob {
                             + "ORDER BY id LIMIT ?",
                     spaceId, cutoff, lastId, batch);
             if (rows.isEmpty()) {
+                truncated = false;
                 break;
             }
             List<Long> ids = new ArrayList<>();
@@ -132,8 +144,12 @@ public class RetentionJob {
                 }
             }
             if (rows.size() < batch) {
+                truncated = false;
                 break;
             }
+        }
+        if (truncated) {
+            warnTruncated(spaceId, "SESSION", lastId);
         }
         return total;
     }
@@ -141,9 +157,10 @@ public class RetentionJob {
     private boolean archiveSessions(Long spaceId, List<Long> sessionIds) {
         ComplianceSettings settings = complianceSettingsService.effective(spaceId);
         try {
-            storage.store(spaceId, "jsonl.gz", out -> writeArchive(out, sessionIds, settings));
+            storage.store(spaceId, "gz", out -> writeArchive(out, sessionIds, settings));
             return true;
         } catch (IOException | RuntimeException ex) {
+            meterRegistry.counter("king.ai.compliance.retention.archive_failed").increment();
             log.warn("保留归档失败：spaceId={}, sessions={}, reason={}",
                     spaceId, sessionIds.size(), ex.getClass().getSimpleName());
             return false;
@@ -183,22 +200,22 @@ public class RetentionJob {
     }
 
     /**
-     * 消息表没有 space_id 也没有级联外键，删除会话前必须显式删除其消息。
+     * 消息表通过 V6 的 fk_message_session ... ON DELETE CASCADE 随会话级联删除，
+     * 因此用单条语句删除会话即可避免两条自动提交语句之间留下空会话的中间态。
      */
     private void deleteSessions(List<Long> sessionIds) {
         if (sessionIds == null || sessionIds.isEmpty()) {
             return;
         }
-        String in = placeholders(sessionIds.size());
-        Object[] args = sessionIds.toArray();
-        jdbcTemplate.update("DELETE FROM king_ai_chat_message WHERE session_id IN (" + in + ")", args);
-        jdbcTemplate.update("DELETE FROM king_ai_chat_session WHERE id IN (" + in + ")", args);
+        jdbcTemplate.update("DELETE FROM king_ai_chat_session WHERE id IN ("
+                + placeholders(sessionIds.size()) + ")", sessionIds.toArray());
     }
 
     private int purgeMessages(Long spaceId, LocalDateTime cutoff, boolean dryRun) {
         int total = 0;
         long lastId = 0L;
         int batch = batchSize();
+        boolean truncated = true;
         for (int round = 0; round < maxBatches(); round++) {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                     "SELECT m.id, m.session_id FROM king_ai_chat_message m "
@@ -207,6 +224,7 @@ public class RetentionJob {
                             + "ORDER BY m.id LIMIT ?",
                     spaceId, cutoff, lastId, batch);
             if (rows.isEmpty()) {
+                truncated = false;
                 break;
             }
             List<Long> ids = new ArrayList<>();
@@ -229,35 +247,70 @@ public class RetentionJob {
                 total += ids.size();
             }
             if (rows.size() < batch) {
+                truncated = false;
                 break;
             }
+        }
+        if (truncated) {
+            warnTruncated(spaceId, "MESSAGE", lastId);
         }
         return total;
     }
 
+    /**
+     * 审计日志同样按 id 游标分批，避免一次 DELETE 锁住整表；法律保留逐条复查，
+     * 不使用批量快照，以观察到清理过程中新建的保留。
+     */
     private int purgeAudit(Long spaceId, LocalDateTime cutoff, boolean dryRun) {
-        Set<Long> held = legalHoldService.activeResourceIds(spaceId, "AUDIT");
-        if (!dryRun) {
-            return auditLogService.purgeBefore(spaceId, cutoff, held);
+        int total = 0;
+        long lastId = 0L;
+        int batch = batchSize();
+        boolean truncated = true;
+        for (int round = 0; round < maxBatches(); round++) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT id FROM king_ai_audit_log WHERE space_id = ? AND created_at < ? "
+                            + "AND id > ? ORDER BY id LIMIT ?",
+                    spaceId, cutoff, lastId, batch);
+            if (rows.isEmpty()) {
+                truncated = false;
+                break;
+            }
+            List<Long> ids = new ArrayList<>();
+            for (Map<String, Object> row : rows) {
+                Long id = toLong(row.get("id"));
+                if (id == null) {
+                    continue;
+                }
+                lastId = Math.max(lastId, id);
+                if (!legalHoldService.isHeld(spaceId, "AUDIT", id)) {
+                    ids.add(id);
+                }
+            }
+            if (!ids.isEmpty()) {
+                total += dryRun ? ids.size() : auditLogService.purgeByIds(spaceId, ids);
+            }
+            if (rows.size() < batch) {
+                truncated = false;
+                break;
+            }
         }
-        StringBuilder sql = new StringBuilder(
-                "SELECT COUNT(*) FROM king_ai_audit_log WHERE space_id = ? AND created_at < ?");
-        List<Object> args = new ArrayList<>();
-        args.add(spaceId);
-        args.add(cutoff);
-        if (!held.isEmpty()) {
-            sql.append(" AND id NOT IN (").append(placeholders(held.size())).append(')');
-            args.addAll(held);
+        if (truncated) {
+            warnTruncated(spaceId, "AUDIT", lastId);
         }
-        Long count = jdbcTemplate.queryForObject(sql.toString(), Long.class, args.toArray());
-        return count == null ? 0 : count.intValue();
+        return total;
     }
 
+    /**
+     * 过期导出文件的安全网：文件 TTL 由 {@code ExportJobWorker#expire()} 负责，
+     * 此处只清理仍停留在 COMPLETED 的过期任务（例如工作线程删除文件失败或实例重启后遗留）。
+     * EXPORT 策略的 retention_days 不参与文件过期判定，文件生命周期始终由 TTL 控制。
+     */
     private int purgeExports(Long spaceId, boolean dryRun) {
         int total = 0;
         long lastId = 0L;
         int batch = batchSize();
         LocalDateTime now = LocalDateTime.now();
+        boolean truncated = true;
         for (int round = 0; round < maxBatches(); round++) {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                     "SELECT id, file_path FROM king_ai_export_job WHERE space_id = ? "
@@ -299,8 +352,12 @@ public class RetentionJob {
                 total++;
             }
             if (rows.size() < batch) {
+                truncated = false;
                 break;
             }
+        }
+        if (truncated) {
+            warnTruncated(spaceId, "EXPORT", lastId);
         }
         return total;
     }
@@ -311,6 +368,11 @@ public class RetentionJob {
 
     private int maxBatches() {
         return Math.max(1, properties.getCompliance().getRetention().getMaxBatches());
+    }
+
+    private void warnTruncated(Long spaceId, String type, long lastId) {
+        log.warn("保留清理达到单轮批次上限，剩余数据将在下次运行继续：spaceId={}, type={}, lastId={}",
+                spaceId, type, lastId);
     }
 
     private static String placeholders(int count) {

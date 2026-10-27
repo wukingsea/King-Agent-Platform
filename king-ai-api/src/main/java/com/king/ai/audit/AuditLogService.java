@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.method.HandlerMethod;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.Locale;
 import java.util.Set;
 
@@ -102,15 +103,21 @@ public class AuditLogService {
             return;
         }
         LocalDateTime cutoff = LocalDateTime.now().minusDays(retentionDays);
-        int deleted = purgeBefore(null, cutoff, Set.of());
-        if (deleted > 0) {
-            log.info("Purged {} audit log entries older than {}", deleted, cutoff);
+        try {
+            int deleted = purgeBefore(null, cutoff, Set.of());
+            if (deleted > 0) {
+                log.info("Purged {} audit log entries older than {}", deleted, cutoff);
+            }
+        } catch (RuntimeException ex) {
+            // 历史全局清理自行兜底；合规保留路径由 RetentionJob 记录失败审计后上抛。
+            log.warn("审计保留清理失败：reason={}", ex.getClass().getSimpleName());
         }
     }
 
     /**
      * 删除截止时间之前的审计日志，可选按空间限定并排除被法律保留的日志 ID。
-     * 返回实际删除行数；审计关闭或参数缺失时不执行删除。
+     * 返回实际删除行数；审计关闭或参数缺失时不执行删除。删除失败向上抛出，
+     * 由调用方记录失败审计，避免把异常误报成“已清理 0 条”。
      */
     public int purgeBefore(Long spaceId, LocalDateTime cutoff, Set<Long> excludedIds) {
         if (!properties.getAudit().isEnabled() || cutoff == null) {
@@ -122,12 +129,19 @@ public class AuditLogService {
         if (excludedIds != null && !excludedIds.isEmpty()) {
             wrapper.notIn(AuditLog::getId, excludedIds);
         }
-        try {
-            return auditLogMapper.delete(wrapper);
-        } catch (RuntimeException ex) {
-            log.warn("审计保留清理失败：reason={}", ex.getClass().getSimpleName());
+        return auditLogMapper.delete(wrapper);
+    }
+
+    /**
+     * 按 ID 删除已通过空间与法律保留校验的审计日志，供保留任务分批调用。
+     */
+    public int purgeByIds(Long spaceId, Collection<Long> ids) {
+        if (!properties.getAudit().isEnabled() || ids == null || ids.isEmpty()) {
             return 0;
         }
+        return auditLogMapper.delete(new LambdaQueryWrapper<AuditLog>()
+                .eq(spaceId != null, AuditLog::getSpaceId, spaceId)
+                .in(AuditLog::getId, ids));
     }
 
     /**
