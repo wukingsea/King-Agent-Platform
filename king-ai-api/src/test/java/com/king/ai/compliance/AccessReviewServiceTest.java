@@ -22,12 +22,14 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatcher;
 import org.mockito.InOrder;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -35,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -60,6 +63,19 @@ class AccessReviewServiceTest {
     private static final long ITEM = 11L;
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 10, 26, 12, 0);
 
+    /** 目标成员角色读取必须是锁定读，否则事务早先建立的快照会让守卫读到过期状态。 */
+    private static final ArgumentMatcher<String> TARGET_ROLE_LOCK_READ = sql ->
+            sql.contains("SELECT role FROM king_ai_user_space")
+                    && sql.contains("user_id")
+                    && sql.contains("FOR UPDATE");
+
+    /** 所有者数量读取必须是空间级锁定读（不带 user_id 条件）。 */
+    private static final ArgumentMatcher<String> OWNER_ROLES_LOCK_READ = sql ->
+            sql.contains("SELECT role FROM king_ai_user_space")
+                    && sql.contains("WHERE space_id")
+                    && sql.contains("FOR UPDATE")
+                    && !sql.contains("user_id");
+
     private AccessReviewMapper reviewMapper;
     private AccessReviewItemMapper itemMapper;
     private JdbcTemplate jdbc;
@@ -77,9 +93,10 @@ class AccessReviewServiceTest {
         service = new AccessReviewService(reviewMapper, itemMapper, jdbc, spaceService, audit,
                 new KingAiProperties());
         // decide 会先对复核行加锁；默认放行，个别测试可覆盖为空结果验证 404。
+        // 成员相关查询默认返回空列表（等价于成员已不在空间），需要的用例显式 stub。
         doAnswer(invocation -> {
             String sql = invocation.getArgument(0);
-            return sql.contains("FOR UPDATE") ? List.of(REVIEW) : List.of();
+            return sql.contains("FROM king_ai_access_review") ? List.of(REVIEW) : List.of();
         }).when(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));
         // 成员变更会先锁定空间行，默认返回该空间。
         doAnswer(invocation -> List.of(SPACE))
@@ -542,7 +559,8 @@ class AccessReviewServiceTest {
                     assertThat(ex.getMessage()).contains("只有空间所有者");
                 });
         verify(jdbc, never()).update(anyString(), any(Object[].class));
-        verify(jdbc, never()).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+        verify(jdbc, never()).query(argThat(OWNER_ROLES_LOCK_READ), any(RowMapper.class),
+                any(Object[].class));
     }
 
     @Test
@@ -558,15 +576,15 @@ class AccessReviewServiceTest {
                     assertThat(ex.getMessage()).contains("只有空间所有者");
                 });
         verify(jdbc, never()).update(anyString(), any(Object[].class));
-        verify(jdbc, never()).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+        verify(jdbc, never()).query(argThat(OWNER_ROLES_LOCK_READ), any(RowMapper.class),
+                any(Object[].class));
     }
 
     @Test
     void singleOwnerCannotBeRemoved() {
         stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "OWNER", "PENDING"));
         when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.OWNER);
-        stubLiveRole("OWNER");
-        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(SPACE))).thenReturn(1L);
+        stubMembership("OWNER", "OWNER");
 
         assertThatThrownBy(() -> service.decide(SPACE, REVIEW, ITEM,
                 new AccessReviewDecisionRequest("REMOVE", null), operator(2L)))
@@ -581,8 +599,7 @@ class AccessReviewServiceTest {
     void singleOwnerCannotBeDowngraded() {
         stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "OWNER", "PENDING"));
         when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.OWNER);
-        stubLiveRole("OWNER");
-        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(SPACE))).thenReturn(1L);
+        stubMembership("OWNER", "OWNER");
 
         assertThatThrownBy(() -> service.decide(SPACE, REVIEW, ITEM,
                 new AccessReviewDecisionRequest("DOWNGRADE", null), operator(2L)))
@@ -600,8 +617,7 @@ class AccessReviewServiceTest {
         UserPrincipal platformAdmin = new UserPrincipal(2L, "root", "Root", "ADMIN", SPACE,
                 "OWNER", false);
         when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.ADMIN);
-        stubLiveRole("OWNER");
-        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(SPACE))).thenReturn(2L);
+        stubMembership("OWNER", "OWNER", "OWNER");
 
         service.decide(SPACE, REVIEW, ITEM,
                 new AccessReviewDecisionRequest("DOWNGRADE", null), platformAdmin);
@@ -615,17 +631,17 @@ class AccessReviewServiceTest {
     void ownerRemovalLocksSpaceBeforeCountingOwners() {
         stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "OWNER", "PENDING"));
         when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.OWNER);
-        stubLiveRole("OWNER");
-        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(SPACE))).thenReturn(2L);
+        stubMembership("OWNER", "OWNER", "OWNER");
 
         service.decide(SPACE, REVIEW, ITEM,
                 new AccessReviewDecisionRequest("REMOVE", null), operator(2L));
 
         InOrder order = inOrder(jdbc);
         order.verify(jdbc).queryForList(contains("king_ai_space"), eq(Long.class), eq(SPACE));
-        order.verify(jdbc).query(contains("SELECT role FROM king_ai_user_space"),
-                any(RowMapper.class), eq(SPACE), eq(9L));
-        order.verify(jdbc).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+        order.verify(jdbc).query(argThat(TARGET_ROLE_LOCK_READ), any(RowMapper.class),
+                eq(SPACE), eq(9L));
+        order.verify(jdbc).query(argThat(OWNER_ROLES_LOCK_READ), any(RowMapper.class),
+                eq(SPACE));
         order.verify(jdbc).update(contains("DELETE FROM king_ai_user_space"), any(Object[].class));
     }
 
@@ -633,17 +649,17 @@ class AccessReviewServiceTest {
     void ownerDowngradeLocksSpaceBeforeCountingOwners() {
         stubReviewAndItem(review(REVIEW, SPACE, "OPEN"), memberItem(9L, "OWNER", "PENDING"));
         when(spaceService.roleInSpace(any(), eq(SPACE))).thenReturn(SpaceRole.OWNER);
-        stubLiveRole("OWNER");
-        when(jdbc.queryForObject(anyString(), eq(Long.class), eq(SPACE))).thenReturn(2L);
+        stubMembership("OWNER", "OWNER", "OWNER");
 
         service.decide(SPACE, REVIEW, ITEM,
                 new AccessReviewDecisionRequest("DOWNGRADE", null), operator(2L));
 
         InOrder order = inOrder(jdbc);
         order.verify(jdbc).queryForList(contains("king_ai_space"), eq(Long.class), eq(SPACE));
-        order.verify(jdbc).query(contains("SELECT role FROM king_ai_user_space"),
-                any(RowMapper.class), eq(SPACE), eq(9L));
-        order.verify(jdbc).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+        order.verify(jdbc).query(argThat(TARGET_ROLE_LOCK_READ), any(RowMapper.class),
+                eq(SPACE), eq(9L));
+        order.verify(jdbc).query(argThat(OWNER_ROLES_LOCK_READ), any(RowMapper.class),
+                eq(SPACE));
         order.verify(jdbc).update(contains("UPDATE king_ai_user_space SET role = ?"),
                 any(Object[].class));
     }
@@ -659,10 +675,11 @@ class AccessReviewServiceTest {
 
         InOrder order = inOrder(jdbc);
         order.verify(jdbc).queryForList(contains("king_ai_space"), eq(Long.class), eq(SPACE));
-        order.verify(jdbc).query(contains("SELECT role FROM king_ai_user_space"),
-                any(RowMapper.class), eq(SPACE), eq(9L));
+        order.verify(jdbc).query(argThat(TARGET_ROLE_LOCK_READ), any(RowMapper.class),
+                eq(SPACE), eq(9L));
         order.verify(jdbc).update(contains("DELETE FROM king_ai_user_space"), any(Object[].class));
-        verify(jdbc, never()).queryForObject(contains("COUNT(*)"), eq(Long.class), eq(SPACE));
+        verify(jdbc, never()).query(argThat(OWNER_ROLES_LOCK_READ), any(RowMapper.class),
+                any(Object[].class));
     }
 
     @Test
@@ -855,13 +872,24 @@ class AccessReviewServiceTest {
     }
 
     private void stubLiveRole(String role) {
+        stubMembership(role);
+    }
+
+    /**
+     * 按 SQL 区分三类读取：复核行锁、目标成员实时角色（带 user_id 的锁定读）、
+     * 空间内所有者列表（空间级锁定读）。共享同一 jdbc.query 重载，只能按 SQL 内容分派。
+     */
+    private void stubMembership(String role, String... spaceRoles) {
         doAnswer(invocation -> {
             String sql = invocation.getArgument(0);
-            if (sql.contains("FOR UPDATE")) {
+            if (sql.contains("FROM king_ai_access_review")) {
                 return List.of(REVIEW);
             }
-            if (sql.contains("SELECT role FROM king_ai_user_space")) {
+            if (TARGET_ROLE_LOCK_READ.matches(sql)) {
                 return List.of(role);
+            }
+            if (sql.contains("FROM king_ai_user_space")) {
+                return Arrays.asList(spaceRoles);
             }
             return List.of();
         }).when(jdbc).query(anyString(), any(RowMapper.class), any(Object[].class));

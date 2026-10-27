@@ -222,6 +222,8 @@ public class AccessReviewService {
         }
         // 以空间行锁串行化同一空间的成员变更，保证“所有者数量”校验与后续删除/降级之间
         // 不会因并发而同时通过（TOCTOU），避免两个所有者被同时移除。
+        // 注意：decide 在加锁前已做过普通读取并固定了 REPEATABLE READ 快照，因此加锁之后
+        // 的成员状态必须用锁定读（FOR UPDATE）重新读取，否则仍会看到加锁前的过期快照。
         jdbcTemplate.queryForList(
                 "SELECT id FROM king_ai_space WHERE id = ? FOR UPDATE", Long.class, spaceId);
         if (AccessReviewDecisions.REMOVE.equals(decision)
@@ -238,10 +240,12 @@ public class AccessReviewService {
             throw BizException.forbidden("只有空间所有者可以调整其他所有者");
         }
         if (current == SpaceRole.OWNER) {
-            Long owners = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM king_ai_user_space WHERE space_id = ? AND role = 'OWNER'",
-                    Long.class, spaceId);
-            if (owners == null || owners <= 1) {
+            // 所有者数量同样必须锁定读：普通 COUNT 会复用加锁前的快照，导致并发移除双双通过。
+            List<String> roles = jdbcTemplate.query(
+                    "SELECT role FROM king_ai_user_space WHERE space_id = ? FOR UPDATE",
+                    (rs, rowNum) -> rs.getString(1), spaceId);
+            long owners = roles.stream().filter("OWNER"::equals).count();
+            if (owners <= 1) {
                 throw BizException.badRequest(AccessReviewDecisions.REMOVE.equals(decision)
                         ? "该成员是空间唯一所有者，请先转移所有权"
                         : "该成员是空间唯一所有者，不能降级，请先转移所有权");
@@ -260,7 +264,7 @@ public class AccessReviewService {
 
     private SpaceRole currentRole(Long spaceId, Long userId) {
         List<String> roles = jdbcTemplate.query(
-                "SELECT role FROM king_ai_user_space WHERE space_id = ? AND user_id = ?",
+                "SELECT role FROM king_ai_user_space WHERE space_id = ? AND user_id = ? FOR UPDATE",
                 (rs, rowNum) -> rs.getString(1), spaceId, userId);
         if (roles.isEmpty()) {
             throw BizException.notFound("成员已不在该空间");
