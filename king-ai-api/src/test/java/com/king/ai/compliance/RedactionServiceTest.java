@@ -97,13 +97,23 @@ class RedactionServiceTest {
     }
 
     @Test
-    void keepsLongerCustomMatchWithSameStart() {
+    void keepsEarlierLongerMatchWhenCustomPatternsOverlap() {
         RedactionResult result = service.redact("EMP-123456",
                 enabled("EMP-\\d{6}", "\\d{6}"));
 
         assertThat(result.text()).isEqualTo("[REDACTED:CUSTOM]");
         assertThat(result.hits()).singleElement()
                 .satisfies(hit -> assertThat(hit.ruleId()).isEqualTo("custom-1"));
+    }
+
+    @Test
+    void keepsLongestCustomMatchWhenPatternsShareStart() {
+        RedactionResult result = service.redact("EMP-123456-99",
+                enabled("EMP-\\d{6}", "EMP-\\d{6}-\\d{2}"));
+
+        assertThat(result.text()).isEqualTo("[REDACTED:CUSTOM]");
+        assertThat(result.hits()).singleElement()
+                .satisfies(hit -> assertThat(hit.ruleId()).isEqualTo("custom-2"));
     }
 
     @Test
@@ -162,5 +172,23 @@ class RedactionServiceTest {
             assertThat(hit.start()).isZero();
             assertThat(hit.end()).isEqualTo(text.length());
         });
+    }
+
+    @Test
+    void runtimeRegexBudgetFailsClosedOnCatastrophicBacktracking() {
+        // This pattern is NOT rejected by hasUnboundedNestedQuantifier: (a|aa) contains no
+        // unbounded quantifier and {1,64} is bounded. Only the 5M char-access budget stops the
+        // exponential split of the 64 a's into 1- and 2-char repetitions.
+        //
+        // The similarly-shaped (a|aa)+$ cannot be used here: on this project's JDK 17.0.6 the
+        // engine resolves that unbounded '+' loop in linear time (~393 charAt calls for 64 a's),
+        // so it never reaches the budget and would return the raw text instead of the sentinel.
+        String text = "a".repeat(64) + "!";
+
+        RedactionResult result = service.redact(text, enabled("(a|aa){1,64}$"));
+
+        assertThat(result.text()).isEqualTo("[REDACTED:REGEX_LIMIT]");
+        assertThat(result.hits()).singleElement()
+                .satisfies(hit -> assertThat(hit.ruleId()).isEqualTo("regex-limit"));
     }
 }
