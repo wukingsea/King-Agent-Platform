@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["api", "ui", "externalDatabase", "externalRedis", "externalMilvus", "appSecret", "adminSecret"],
+  "properties": {
+    "api": {
+      "type": "object",
+      "required": ["image", "replicaCount"],
+      "properties": {
+        "image": {
+          "type": "object",
+          "required": ["repository", "tag"],
+          "properties": {
+            "repository": {"type": "string", "minLength": 1},
+            "tag": {"type": "string", "minLength": 1},
+            "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+          }
+        },
+        "replicaCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "ui": {
+      "type": "object",
+      "required": ["image", "replicaCount"],
+      "properties": {
+        "image": {
+          "type": "object",
+          "required": ["repository", "tag"],
+          "properties": {
+            "repository": {"type": "string", "minLength": 1},
+            "tag": {"type": "string", "minLength": 1},
+            "pullPolicy": {"enum": ["Always", "IfNotPresent", "Never"]}
+          }
+        },
+        "replicaCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "externalDatabase": {
+      "type": "object",
+      "required": ["host", "port", "database", "existingSecret"],
+      "properties": {
+        "host": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "database": {"type": "string", "minLength": 1},
+        "existingSecret": {"type": "string", "minLength": 1}
+      }
+    },
+    "externalRedis": {
+      "type": "object",
+      "required": ["host", "port", "existingSecret"],
+      "properties": {
+        "host": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "existingSecret": {"type": "string", "minLength": 1}
+      }
+    },
+    "externalMilvus": {
+      "type": "object",
+      "required": ["url"],
+      "properties": {"url": {"type": "string", "minLength": 1}}
+    },
+    "appSecret": {
+      "type": "object",
+      "required": ["existingSecret"],
+      "properties": {"existingSecret": {"type": "string", "minLength": 1}}
+    },
+    "adminSecret": {
+      "type": "object",
+      "required": ["existingSecret"],
+      "properties": {"existingSecret": {"type": "string", "minLength": 1}}
+    },
+    "ingress": {
+      "type": "object",
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "host": {"type": "string", "minLength": 1}
+      }
+    },
+    "persistence": {"type": "object"},
+    "devDependencies": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {"enabled": {"type": "boolean"}},
+      "if": {"properties": {"enabled": {"const": true}}},
+      "then": {
+        "required": ["secrets"],
+        "properties": {
+          "secrets": {
+            "type": "object",
+            "required": ["appSecret", "encryptionKey", "adminPassword", "mysqlPassword", "redisPassword"],
+            "properties": {
+              "appSecret": {"type": "string", "minLength": 32},
+              "encryptionKey": {"type": "string", "minLength": 32},
+              "adminPassword": {"type": "string", "minLength": 12},
+              "mysqlPassword": {"type": "string", "minLength": 8},
+              "redisPassword": {"type": "string", "minLength": 8}
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# NOTE: targetPort is numeric 80 because the current king-ai-ui image (nginx) listens
+# on port 80. Task 3 hardens the UI image to run as non-root on 8080; that task must
+# update targetPort to 8080 here. Ports are kept numeric so this Service stays
+# self-contained and does not depend on named containerPorts declared by Deployments.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "king-ai.fullname" . }}-ui
+  labels:
+    {{- include "king-ai.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "king-ai.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: ui
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 80

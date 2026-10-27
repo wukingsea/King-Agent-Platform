@@ -1,0 +1,181 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+
+api:
+  image:
+    repository: king-ai-api
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  allowedOrigins: ""
+  javaOpts: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  terminationGracePeriodSeconds: 120
+
+ui:
+  image:
+    repository: king-ai-ui
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  podAnnotations: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  terminationGracePeriodSeconds: 30
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+externalDatabase:
+  host: mysql.example.internal
+  port: 3306
+  database: king_ai
+  existingSecret: king-ai-db
+  usernameKey: username
+  passwordKey: password
+  sslMode: REQUIRED
+
+externalRedis:
+  host: redis.example.internal
+  port: 6379
+  existingSecret: king-ai-redis
+  passwordKey: password
+  sslEnabled: true
+
+externalMilvus:
+  url: http://milvus.example.internal:19530
+  existingSecret: ""
+  tokenKey: token
+
+appSecret:
+  existingSecret: king-ai-app
+  secretKey: app-secret
+  encryptionKeyKey: encryption-key
+  previousKeysKey: previous-keys
+
+adminSecret:
+  existingSecret: king-ai-admin
+  usernameKey: username
+  passwordKey: password
+
+ingress:
+  enabled: false
+  className: nginx
+  host: ai.example.com
+  pathType: Prefix
+  annotations: {}
+  tls:
+    enabled: true
+    secretName: king-ai-tls
+  sse:
+    proxyReadTimeout: 600
+    proxySendTimeout: 600
+    bodySize: 25m
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetActiveStreams: 80
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  ingressNamespace: ingress-nginx
+  ingressPodLabels:
+    app.kubernetes.io/name: ingress-nginx
+  dnsNamespace: kube-system
+  egress:
+    databaseCidrs: []
+    redisCidrs: []
+    milvusCidrs: []
+    otelCidrs: []
+    objectStorageCidrs: []
+    publicHttps: true
+    otelPort: 4317
+
+persistence:
+  exports:
+    enabled: true
+    mode: pvc
+    size: 20Gi
+    storageClass: ""
+    accessMode: ReadWriteMany
+
+migration:
+  enabled: true
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+devDependencies:
+  enabled: false
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 8Gi
+  mysql:
+    enabled: true
+    image: mysql:8.4
+  redis:
+    enabled: true
+    image: redis:7-alpine
+  milvus:
+    enabled: true
+    image: milvusdb/milvus:v2.5.4
+    etcdImage: quay.io/coreos/etcd:v3.5.18
+    minioImage: minio/minio:RELEASE.2024-12-18T13-15-44Z
+  secrets:
+    appSecret: ""
+    encryptionKey: ""
+    adminUsername: admin
+    adminPassword: ""
+    mysqlPassword: ""
+    redisPassword: ""
+    minioUser: ""
+    minioPassword: ""
