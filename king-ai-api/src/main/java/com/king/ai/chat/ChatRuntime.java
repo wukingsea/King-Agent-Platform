@@ -44,6 +44,7 @@ import com.king.ai.model.ModelRuntimeService;
 import com.king.ai.observability.ChatMetrics;
 import com.king.ai.observability.ChatTracing;
 import com.king.ai.observability.KnowledgeMetrics;
+import com.king.ai.observability.McpMetrics;
 import com.king.ai.skill.SkillService;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.tracing.Span;
@@ -111,6 +112,7 @@ public class ChatRuntime {
     private final ChatTracing tracing;
     private final ChatMetrics chatMetrics;
     private final KnowledgeMetrics knowledgeMetrics;
+    private final McpMetrics mcpMetrics;
 
     private final Map<String, SseEmitter> activeEmitters = new ConcurrentHashMap<>();
 
@@ -383,6 +385,10 @@ public class ChatRuntime {
                                 argRedaction.redactedCount() + toolRedaction.redactedCount());
                     }
                     long toolDuration = System.currentTimeMillis() - toolStart;
+                    if (tool != null && tool.kind() == ToolKind.MCP) {
+                        mcpMetrics.call(tool.server() == null ? null : tool.server().getName(),
+                                tool.remoteName(), outcome.error(), toolDuration);
+                    }
                     String toolSource = tool == null ? "UNKNOWN" : tool.source();
                     chatMetrics.toolCall(toolSource, outcome.error());
                     auditLogService.recordChat(spaceId, actor.userId(), actor.displayName(),
