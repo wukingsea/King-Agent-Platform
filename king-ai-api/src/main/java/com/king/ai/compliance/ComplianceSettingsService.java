@@ -199,10 +199,15 @@ public class ComplianceSettingsService {
                 if (pattern.length() > 200) {
                     throw BizException.badRequest("自定义正则以 200 字符为限");
                 }
+                Pattern compiled;
                 try {
-                    Pattern.compile(pattern);
+                    compiled = Pattern.compile(pattern);
                 } catch (PatternSyntaxException ex) {
                     throw BizException.badRequest("自定义 PII 正则第 " + (patterns.size() + 1) + " 条不合法");
+                }
+                if (RedactionService.hasUnboundedNestedQuantifier(compiled)) {
+                    throw BizException.badRequest("自定义 PII 正则第 " + (patterns.size() + 1)
+                            + " 条包含无界嵌套量词，保存后所有消息会被替换为 [REDACTED:REGEX_LIMIT]，请改写");
                 }
                 patterns.add(pattern);
             }

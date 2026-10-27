@@ -105,7 +105,7 @@ public class RedactionService {
      * these shapes quickly, but the class is a classic super-linear backtracking hazard and a
      * fail-closed scan must not depend on engine-specific optimizations.
      */
-    private static boolean hasUnboundedNestedQuantifier(Pattern pattern) {
+    static boolean hasUnboundedNestedQuantifier(Pattern pattern) {
         String regex = pattern.pattern();
         Deque<Boolean> groupUnbounded = new ArrayDeque<>();
         Deque<Boolean> atomicGroup = new ArrayDeque<>();

@@ -98,6 +98,30 @@ class ComplianceSettingsServiceTest {
     }
 
     @Test
+    void updateRejectsUnboundedNestedQuantifierPattern() {
+        ComplianceSettingUpdateRequest request = new ComplianceSettingUpdateRequest(
+                true, "LOCAL", "BLOCK", "BLOCK", "", "(a+)+b");
+
+        assertThatThrownBy(() -> service.update(7L, request))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("第 1 条")
+                .hasMessageContaining("REGEX_LIMIT");
+    }
+
+    @Test
+    void updateAcceptsBoundedNestedQuantifierPattern() {
+        when(mapper.selectOne(any())).thenReturn(null);
+        ComplianceSettingUpdateRequest request = new ComplianceSettingUpdateRequest(
+                true, "LOCAL", "BLOCK", "BLOCK", "", "(\\d{1,3}\\.){3}");
+
+        service.update(7L, request);
+
+        ArgumentCaptor<ComplianceSetting> captor = ArgumentCaptor.forClass(ComplianceSetting.class);
+        verify(mapper).insert(captor.capture());
+        assertThat(captor.getValue().getPiiCustomPatterns()).isEqualTo("(\\d{1,3}\\.){3}");
+    }
+
+    @Test
     void updateNormalizesBlocklistAndPersists() {
         when(mapper.selectOne(any())).thenReturn(null);
         ComplianceSettingUpdateRequest request = new ComplianceSettingUpdateRequest(
