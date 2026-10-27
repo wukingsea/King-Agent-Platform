@@ -84,6 +84,8 @@ public class ChatRuntime {
             "write", "create", "update", "delete", "remove", "send", "post", "put", "patch",
             "execute", "run", "deploy", "publish", "upload", "insert", "drop", "grant", "revoke",
             "approve", "pay", "transfer");
+    private static final Set<String> MODERATION_CATEGORIES = Set.of(
+            "BLOCKLIST", "SPAM", "FLOOD", "MODERATION_UNAVAILABLE", "EXTERNAL");
 
     private final ChatService chatService;
     private final ModelRuntimeService modelRuntimeService;
@@ -145,10 +147,10 @@ public class ChatRuntime {
             ChatAuditContext audit = captureAuditContext();
             auditLogService.recordEvent(spaceId, actor.userId(), actor.displayName(),
                     "chat.moderation_blocked", "chat", null, AuditLogService.STATUS_DENIED,
-                    "surface=input, category=" + ex.category(),
+                    "surface=input, category=" + boundedCategory(ex.category()),
                     audit.ip(), audit.userAgent(), audit.requestId());
             meterRegistry.counter("king.ai.compliance.moderation", "surface", "input",
-                    "action", "block", "category", ex.category()).increment();
+                    "action", "block", "category", boundedCategory(ex.category())).increment();
             throw BizException.badRequest("输入包含不合规内容，已被拦截");
         }
         String safeMessage = prepared.text();
@@ -416,10 +418,10 @@ public class ChatRuntime {
                     "chat.moderation_blocked", "chat",
                     session == null ? null : String.valueOf(session.getId()),
                     AuditLogService.STATUS_DENIED,
-                    "surface=output, category=" + ex.category(),
+                    "surface=output, category=" + boundedCategory(ex.category()),
                     auditContext.ip(), auditContext.userAgent(), auditContext.requestId());
             meterRegistry.counter("king.ai.compliance.moderation", "surface", "output",
-                    "action", "block", "category", ex.category()).increment();
+                    "action", "block", "category", boundedCategory(ex.category())).increment();
             sendQuietly(emitter, "error", Map.of("message", errorMessage));
         } catch (Throwable ex) {
             if (token.isCancelled()) {
@@ -440,6 +442,11 @@ public class ChatRuntime {
             redactions.forEach((category, count) ->
                     meterRegistry.counter("king.ai.compliance.redactions",
                             "surface", "output", "category", category).increment(count));
+            if (!redactions.isEmpty()) {
+                sendQuietly(emitter, "degraded", Map.of("reason", "pii_redacted",
+                        "surface", "output",
+                        "count", redactions.values().stream().mapToInt(Integer::intValue).sum()));
+            }
             if (assistant != null) {
                 try {
                     chatService.finishAssistant(assistant.getId(), content.toString(), reasoning.toString(),
@@ -456,11 +463,6 @@ public class ChatRuntime {
                 } catch (RuntimeException ex) {
                     log.warn("Failed to update chat session {}: {}", session.getId(), ex.getMessage());
                 }
-            }
-            if (!redactions.isEmpty()) {
-                sendQuietly(emitter, "degraded", Map.of("reason", "pii_redacted",
-                        "surface", "output",
-                        "count", redactions.values().stream().mapToInt(Integer::intValue).sum()));
             }
             if (assistant != null) {
                 sendQuietly(emitter, "usage", usagePayload(promptTokens, completionTokens));
@@ -552,6 +554,9 @@ public class ChatRuntime {
                     return streamWithRetry(fallback, messages, allowTools, toolDefinitions, agent, emitter,
                             progressMessage, content, reasoning, trace, citations, lastFlush, token,
                             contentGuard, reasoningGuard);
+                } catch (ContentModerationException moderationEx) {
+                    // 审核拦截必须冒泡到 run() 的专用分支，不能当作模型故障降级或重试。
+                    throw moderationEx;
                 } catch (RuntimeException fallbackError) {
                     log.warn("Fallback model failed: {}", fallbackError.getMessage());
                 }
@@ -579,6 +584,10 @@ public class ChatRuntime {
             token.throwIfCancelled();
             int contentMark = content.length();
             int reasoningMark = reasoning.length();
+            // 失败重试必须恢复到本次尝试前的安全带状态：直接 reset 会丢掉上一轮工具调用
+            // 遗留的 holdback 尾巴和已计入的脱敏次数。
+            ComplianceStreamGuard.Checkpoint contentGuardMark = contentGuard.checkpoint();
+            ComplianceStreamGuard.Checkpoint reasoningGuardMark = reasoningGuard.checkpoint();
             try {
                 LlmResult result = resolved.client().streamChat(new LlmChatRequest(
                                 resolved.model().getModel(), messages,
@@ -624,8 +633,8 @@ public class ChatRuntime {
                     // Discard partial output from the failed attempt so retries do not duplicate text.
                     content.setLength(contentMark);
                     reasoning.setLength(reasoningMark);
-                    contentGuard.reset();
-                    reasoningGuard.reset();
+                    contentGuard.restore(contentGuardMark);
+                    reasoningGuard.restore(reasoningGuardMark);
                     sendQuietly(emitter, "retry", Map.of("attempt", attempt + 1, "reset", true,
                             "message", "模型请求失败，正在重试..."));
                     try {
@@ -1077,6 +1086,18 @@ public class ChatRuntime {
             return value;
         }
         return value.substring(0, max) + "…";
+    }
+
+    /**
+     * 外部审核服务返回的 category 属于不可信文本（EXTERNAL/HYBRID 直接透传 provider 响应），
+     * 绝不能作为指标标签或审计详情输出。只放行固定类别，其余一律收敛为 EXTERNAL。
+     */
+    private static String boundedCategory(String category) {
+        if (Texts.isBlank(category)) {
+            return "UNKNOWN";
+        }
+        String normalized = category.trim().toUpperCase(Locale.ROOT);
+        return MODERATION_CATEGORIES.contains(normalized) ? normalized : "EXTERNAL";
     }
 
     private static String friendlyError(Throwable ex) {

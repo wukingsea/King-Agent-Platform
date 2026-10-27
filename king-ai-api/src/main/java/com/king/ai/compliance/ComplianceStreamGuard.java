@@ -102,6 +102,41 @@ public class ComplianceStreamGuard {
         counts.clear();
     }
 
+    /**
+     * Snapshot of the allow-window state (un-emitted holdback tail and redaction counts).
+     * It exists only for retry rollback inside one request: it is never persisted, logged,
+     * or emitted, and the buffered text is never exposed.
+     */
+    public record Checkpoint(String pending, Map<String, Integer> counts) {
+        public Checkpoint {
+            pending = pending == null ? "" : pending;
+            counts = Map.copyOf(counts == null ? Map.of() : counts);
+        }
+    }
+
+    /**
+     * Captures the current pending tail and counts so a failed streaming attempt can be rolled
+     * back without discarding what earlier tool rounds already accumulated. The snapshot stays
+     * in memory for the lifetime of one request only.
+     */
+    public Checkpoint checkpoint() {
+        return new Checkpoint(pending.toString(), counts);
+    }
+
+    /**
+     * Restores a snapshot taken by {@link #checkpoint()}; {@code null} clears the guard.
+     * The buffered text is neither exposed nor logged.
+     */
+    public void restore(Checkpoint checkpoint) {
+        pending.setLength(0);
+        counts.clear();
+        if (checkpoint == null) {
+            return;
+        }
+        pending.append(checkpoint.pending());
+        counts.putAll(checkpoint.counts());
+    }
+
     public Map<String, Integer> countsByCategory() {
         return Map.copyOf(counts);
     }

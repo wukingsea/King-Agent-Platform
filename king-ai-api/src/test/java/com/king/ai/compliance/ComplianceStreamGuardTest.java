@@ -91,6 +91,29 @@ class ComplianceStreamGuardTest {
     }
 
     @Test
+    void restoreKeepsHoldbackTailAndCountsFromEarlierRounds() {
+        ComplianceStreamGuard guard = guard(PII, false);
+        int holdback = Math.max(32, PII.streamHoldbackChars());
+
+        // 200 字符中只放行 holdback 之前的 168 字符，尾巴留在安全带里等待跨轮次拼接。
+        String emitted = guard.accept("a".repeat(holdback + 168));
+        assertThat(emitted).isEqualTo("a".repeat(168));
+        ComplianceStreamGuard.Checkpoint mark = guard.checkpoint();
+
+        String afterCheckpoint = guard.accept("13812345678" + "b".repeat(40));
+        assertThat(afterCheckpoint).contains("[REDACTED:PHONE]");
+        assertThat(guard.countsByCategory()).containsEntry("PHONE", 1);
+
+        guard.restore(mark);
+
+        assertThat(guard.countsByCategory()).isEmpty();
+        String tail = guard.flush();
+        assertThat(tail).isEqualTo("a".repeat(holdback));
+        assertThat(tail).doesNotContain("13812345678");
+        assertThat(tail).doesNotContain("[REDACTED:PHONE]");
+    }
+
+    @Test
     void resetDiscardsBufferedText() {
         ComplianceStreamGuard guard = guard(PII, false);
         guard.accept("1381234");

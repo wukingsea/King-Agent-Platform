@@ -39,4 +39,13 @@ class ChatRuntimeComplianceWiringTest {
         assertThat(source).doesNotContain("content.append(delta)");
         assertThat(source).contains("auditLogService.recordEvent(");
     }
+
+    @Test
+    void runtimeBoundsProviderCategoriesAtBothBlockSinks() throws Exception {
+        String source = Files.readString(RUNTIME);
+
+        assertThat(source).contains("private static String boundedCategory(String category)");
+        // 输入/输出两个拦截分支的审计详情与指标标签共 4 处都必须经过白名单归一化。
+        assertThat(source.split("boundedCategory\\(ex\\.category\\(\\)\\)", -1)).hasSize(5);
+    }
 }
