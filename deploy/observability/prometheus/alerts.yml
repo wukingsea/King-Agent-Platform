@@ -1,0 +1,180 @@
+groups:
+  - name: king-ai-slo
+    interval: 30s
+    rules:
+      - record: king_ai:http_5xx_ratio5m
+        expr: |
+          sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(http_server_requests_seconds_count[5m])), 0.001)
+
+      - record: king_ai:chat_ttft_p95_10m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(king_ai_chat_ttft_seconds_bucket[10m])))
+
+      - record: king_ai:chat_duration_p95_10m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(king_ai_chat_duration_seconds_bucket[10m])))
+
+      - record: king_ai:sse_capacity_ratio
+        expr: |
+          sum(king_ai_sse_connections)
+          /
+          clamp_min(sum(king_ai_sse_capacity), 1)
+
+      - record: king_ai:chat_quota_rejection_ratio5m
+        expr: |
+          sum(rate(king_ai_chat_rejected_total{reason="space_quota"}[5m]))
+          /
+          clamp_min(sum(rate(king_ai_chat_requests_total[5m])), 0.001)
+
+      - record: king_ai:index_failures_10m
+        expr: sum(increase(king_ai_index_jobs_total{outcome="failed"}[10m]))
+
+      - record: king_ai:index_lag_seconds
+        expr: max(king_ai_index_lag_seconds)
+
+      - record: king_ai:mysql_pool_usage
+        expr: |
+          sum(hikaricp_connections_active)
+          /
+          clamp_min(sum(hikaricp_connections_max), 1)
+
+      - record: king_ai:redis_error_ratio5m
+        expr: |
+          sum(rate(king_ai_redis_probes_total{status="error"}[5m]))
+          /
+          clamp_min(sum(rate(king_ai_redis_probes_total[5m])), 0.001)
+
+      - record: king_ai:milvus_search_error_ratio5m
+        expr: |
+          sum(rate(king_ai_milvus_requests_total{operation="search",status="error"}[5m]))
+          /
+          clamp_min(sum(rate(king_ai_milvus_requests_total{operation="search"}[5m])), 0.001)
+
+      - record: king_ai:audit_write_failures_10m
+        expr: sum(increase(king_ai_audit_write_failures_total[10m]))
+
+  - name: king-ai-alerts
+    rules:
+      - alert: KingAiApiDown
+        expr: up{job="king-ai-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "King AI API 不可抓取"
+          description: "Prometheus 已连续 2 分钟无法抓取 {{ $labels.instance }}。"
+          runbook_url: "docs/operations/observability.md#api-down"
+
+      - alert: KingAiApiTargetMissing
+        expr: absent(up{job="king-ai-api"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "King AI API 抓取目标不存在"
+          description: "Prometheus 中没有任何 job=king-ai-api 的目标，检查 scrape 配置。"
+          runbook_url: "docs/operations/observability.md#api-target-missing"
+
+      - alert: KingAiHttp5xxHigh
+        expr: king_ai:http_5xx_ratio5m > 0.01
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "King AI HTTP 5xx 比例超过 1%"
+          description: "最近 5 分钟 5xx 比例为 {{ $value | humanizePercentage }}。"
+          runbook_url: "docs/operations/observability.md#http-5xx"
+
+      - alert: KingAiChatTtftSlow
+        expr: king_ai:chat_ttft_p95_10m > 5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "King AI 首 token P95 超过 5 秒"
+          description: "最近 10 分钟首 token P95 为 {{ $value | humanizeDuration }}。"
+          runbook_url: "docs/operations/observability.md#ttft"
+
+      - alert: KingAiSseCapacityHigh
+        expr: king_ai:sse_capacity_ratio > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "King AI SSE 连接超过容量 80%"
+          description: "当前单实例 SSE 容量使用率为 {{ $value | humanizePercentage }}。"
+          runbook_url: "docs/operations/observability.md#sse-capacity"
+
+      - alert: KingAiChatQuotaRejectionHigh
+        expr: king_ai:chat_quota_rejection_ratio5m > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "King AI 空间配额拒绝率超过 10%"
+          description: "最近 5 分钟空间配额拒绝率为 {{ $value | humanizePercentage }}。"
+          runbook_url: "docs/operations/observability.md#quota-rejection"
+
+      - alert: KingAiIndexFailures
+        expr: king_ai:index_failures_10m > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "King AI 知识索引失败超过 5 次/10 分钟"
+          description: "最近 10 分钟永久失败 {{ $value | humanize }} 次。"
+          runbook_url: "docs/operations/observability.md#index-failures"
+
+      - alert: KingAiIndexLag
+        expr: king_ai:index_lag_seconds > 600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "King AI 索引队列积压超过 10 分钟"
+          description: "最老 pending 任务已等待 {{ $value | humanizeDuration }}。"
+          runbook_url: "docs/operations/observability.md#index-lag"
+
+      - alert: KingAiMysqlPoolHigh
+        expr: king_ai:mysql_pool_usage > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "King AI MySQL 连接池使用率超过 80%"
+          description: "当前 Hikari 活跃连接占比为 {{ $value | humanizePercentage }}。"
+          runbook_url: "docs/operations/observability.md#mysql-pool"
+
+      - alert: KingAiRedisErrors
+        expr: king_ai:redis_error_ratio5m > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "King AI Redis 探针错误率超过 1%"
+          description: "最近 5 分钟 Redis 探针错误率为 {{ $value | humanizePercentage }}。"
+          runbook_url: "docs/operations/observability.md#redis-errors"
+
+      - alert: KingAiMilvusSearchErrors
+        expr: king_ai:milvus_search_error_ratio5m > 0.01
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "King AI Milvus 查询错误率超过 1%"
+          description: "最近 5 分钟 search 错误率为 {{ $value | humanizePercentage }}。"
+          runbook_url: "docs/operations/observability.md#milvus-errors"
+
+      - alert: KingAiAuditWriteFailures
+        expr: king_ai:audit_write_failures_10m > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "King AI 审计写入失败"
+          description: "最近 10 分钟出现 {{ $value | humanize }} 次审计写入失败，检查数据库与审计表。"
+          runbook_url: "docs/operations/observability.md#audit-write-failures"
