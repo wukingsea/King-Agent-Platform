@@ -52,6 +52,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class ComplianceControllerTest {
@@ -226,6 +227,28 @@ class ComplianceControllerTest {
     }
 
     @Test
+    void downloadKeepsOctetStreamForJsonl() throws Exception {
+        Fixture f = new Fixture();
+        when(f.exportService.openDownload(SPACE, 9L)).thenReturn(new ExportService.Download(
+                "audit-9.jsonl", "JSONL", 2L, new ByteArrayInputStream(new byte[]{1, 2})));
+        RequestContext.set(member(42L, "ADMIN"));
+        ResponseEntity<StreamingResponseBody> response;
+        byte[] body;
+        try {
+            response = f.controller.download(9L);
+            body = write(response);
+        } finally {
+            RequestContext.clear();
+        }
+        assertThat(response.getHeaders().getContentType())
+                .isEqualTo(MediaType.APPLICATION_OCTET_STREAM);
+        assertThat(body).containsExactly(1, 2);
+        verify(f.auditLogService).recordEvent(SPACE, 42L, "user42",
+                "compliance.export_download", "export", "9", AuditLogService.STATUS_SUCCESS,
+                "bytes=2", null, null, null);
+    }
+
+    @Test
     void downloadAuditsFailureOnlyAfterBodyStreamFails() throws Exception {
         Fixture f = new Fixture();
         when(f.exportService.openDownload(SPACE, 9L)).thenReturn(new ExportService.Download(
@@ -262,6 +285,7 @@ class ComplianceControllerTest {
         verify(f.auditLogService).recordEvent(SPACE, 42L, "user42",
                 "compliance.export_download", "export", "9", AuditLogService.STATUS_FAILURE,
                 "bytes=2", null, null, null);
+        verifyNoMoreInteractions(f.auditLogService);
     }
 
     @Test

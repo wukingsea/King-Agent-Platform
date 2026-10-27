@@ -131,17 +131,15 @@ public class ComplianceController {
     private void streamDownload(OutputStream out, Long spaceId, Long id, UserPrincipal principal,
                                 ExportService.Download download) throws IOException {
         CountingOutputStream counter = new CountingOutputStream(out);
-        try (InputStream in = download.stream()) {
-            in.transferTo(counter);
-            counter.flush();
+        try {
+            try (InputStream in = download.stream()) {
+                in.transferTo(counter);
+                counter.flush();
+            }
             auditDownload(spaceId, id, principal, AuditLogService.STATUS_SUCCESS, counter.count());
         } catch (IOException | RuntimeException ex) {
-            try {
-                auditDownload(spaceId, id, principal, AuditLogService.STATUS_FAILURE,
-                        counter.count());
-            } catch (RuntimeException auditFailure) {
-                ex.addSuppressed(auditFailure);
-            }
+            // AuditLogService 自身吞掉写入异常并告警，因此这里不会因审计失败而掩盖下载异常。
+            auditDownload(spaceId, id, principal, AuditLogService.STATUS_FAILURE, counter.count());
             throw ex;
         }
     }

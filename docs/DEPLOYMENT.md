@@ -305,7 +305,7 @@ Flyway 迁移只向前执行。回滚应用镜像前必须确认新版本没有�
 - 会话清理前默认写 `jsonl.gz` 归档到 `KING_AI_EXPORT_DIR`；归档失败则本轮不删除该批。
 - 导出仅 OWNER/ADMIN，文件 24 小时过期；本地存储路径按空间隔离，禁止路径穿越。
 - 审计动作：`compliance.retention`、`compliance.retention_policy_update`、`compliance.legal_hold_create`、`compliance.legal_hold_release`、`compliance.export_create`、`compliance.export`、`compliance.export_download`、`compliance.export.expire`、`compliance.access_review_generate`、`compliance.access_review_decide`、`compliance.access_review_export`。
-- 指标：`king.ai.compliance.retention.deleted{type}`（按资源类型统计本轮删除量）。导出任务状态请查询导出任务接口或审计日志；当前未暴露导出任务指标。
+- 指标：`king.ai.compliance.retention.deleted{type,dryRun}`（按资源类型与是否演练统计本轮删除量）。导出任务状态请查询导出任务接口或审计日志；当前未暴露导出任务指标。
 
 ### 访问复核
 
@@ -313,7 +313,7 @@ Flyway 迁移只向前执行。回滚应用镜像前必须确认新版本没有�
 - 报告包含成员角色/最近登录、供应商密钥轮换时间、MCP 配置更新时间、公开智能体。
 - 成员可确认/降级/移除；供应商/MCP/公开智能体只能确认或知悉，实际变更到对应模块执行。
 - 降级阶梯：OWNER→ADMIN→EDITOR→VIEWER；AUDITOR→VIEWER；VIEWER 不可再降。
-- 多实例/Helm 部署：`@Scheduled` 在每个实例都会触发，当前未加分布式锁；建议只让一个实例启用调度（或由外部调度器单点调用），否则并发触发可能生成重复 OPEN 复核。Helm 部署阶段需固定调度副本数或补充数据库锁。
+- 多实例/Helm 部署：`@Scheduled` 在每个实例都会触发，当前未加分布式锁；只让一个实例启用调度（其余实例把 `KING_AI_ACCESS_REVIEW_CRON` 设为 `-` 关闭调度，或由外部调度器单点调用），否则并发触发可能生成重复 OPEN 复核。Helm 部署阶段需固定调度副本数或补充数据库锁。
 
 ## 9. 故障排查
 
