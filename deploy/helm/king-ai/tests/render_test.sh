@@ -25,6 +25,13 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  if grep -q -- "$2" "$1"; then
+    echo "ASSERT FAILED: $1 unexpectedly contains $2" >&2
+    exit 1
+  fi
+}
+
 assert_contains 'kind: Deployment'
 assert_contains 'readOnlyRootFilesystem: true'
 assert_contains 'runAsNonRoot: true'
@@ -40,6 +47,10 @@ assert_contains 'king_ai_chat_active'
 assert_contains 'kind: PodDisruptionBudget'
 assert_contains 'kind: NetworkPolicy'
 assert_contains 'policyTypes:'
+
+# Default render (external dependencies, migration on) must not create any
+# Secret: all credentials come from pre-created Secrets (see chart README).
+assert_not_contains "$WORK_DIR/rendered.yaml" 'kind: Secret'
 
 # With migration disabled and exports on emptyDir neither the Job nor the
 # PVC may render (controller ruling: fold the plan's negative check in here).
@@ -80,5 +91,15 @@ for needle in \
     exit 1
   fi
 done
+
+# Schema validation (Task 7). CI's deployment job installs kubeconform v0.6.7
+# and always runs this script, so the gate is enforced there. Locally, skip
+# loudly instead of failing when kubeconform is not installed.
+if command -v kubeconform >/dev/null 2>&1; then
+  kubeconform -strict -summary -kubernetes-version 1.29.0 \
+    "$WORK_DIR/rendered.yaml" "$WORK_DIR/rendered-kind.yaml" "$WORK_DIR/ingress.yaml"
+else
+  echo "kubeconform not installed; SKIPPED locally (CI deployment job enforces schema validation)" >&2
+fi
 
 echo "render tests passed"
