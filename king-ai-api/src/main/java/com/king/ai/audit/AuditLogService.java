@@ -20,6 +20,7 @@ import org.springframework.web.method.HandlerMethod;
 
 import java.time.LocalDateTime;
 import java.util.Locale;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -88,21 +89,44 @@ public class AuditLogService {
                 result.getTotal(), pageNo, pageSize);
     }
 
+    /**
+     * 历史全局审计清理。合规保留策略启用后由 {@code RetentionJob} 按空间策略接管，
+     * 以便逐空间应用保留天数与法律保留；此处随之停用，避免绕过保留。
+     */
     @Scheduled(cron = "${king-ai.audit.retention-cron:0 30 3 * * *}")
     public void purgeExpired() {
         int retentionDays = properties.getAudit().getRetentionDays();
-        if (!properties.getAudit().isEnabled() || retentionDays <= 0) {
+        if (!properties.getAudit().isEnabled()
+                || properties.getCompliance().getRetention().isEnabled()
+                || retentionDays <= 0) {
             return;
         }
         LocalDateTime cutoff = LocalDateTime.now().minusDays(retentionDays);
+        int deleted = purgeBefore(null, cutoff, Set.of());
+        if (deleted > 0) {
+            log.info("Purged {} audit log entries older than {}", deleted, cutoff);
+        }
+    }
+
+    /**
+     * 删除截止时间之前的审计日志，可选按空间限定并排除被法律保留的日志 ID。
+     * 返回实际删除行数；审计关闭或参数缺失时不执行删除。
+     */
+    public int purgeBefore(Long spaceId, LocalDateTime cutoff, Set<Long> excludedIds) {
+        if (!properties.getAudit().isEnabled() || cutoff == null) {
+            return 0;
+        }
+        LambdaQueryWrapper<AuditLog> wrapper = new LambdaQueryWrapper<AuditLog>()
+                .eq(spaceId != null, AuditLog::getSpaceId, spaceId)
+                .lt(AuditLog::getCreatedAt, cutoff);
+        if (excludedIds != null && !excludedIds.isEmpty()) {
+            wrapper.notIn(AuditLog::getId, excludedIds);
+        }
         try {
-            int deleted = auditLogMapper.delete(new LambdaQueryWrapper<AuditLog>()
-                    .lt(AuditLog::getCreatedAt, cutoff));
-            if (deleted > 0) {
-                log.info("Purged {} audit log entries older than {}", deleted, cutoff);
-            }
+            return auditLogMapper.delete(wrapper);
         } catch (RuntimeException ex) {
-            log.warn("Audit log retention purge failed: {}", ex.getMessage());
+            log.warn("审计保留清理失败：reason={}", ex.getClass().getSimpleName());
+            return 0;
         }
     }
 
