@@ -28,6 +28,7 @@ public class KingAiProperties {
     private Outbound outbound = new Outbound();
     private Admin admin = new Admin();
     private Audit audit = new Audit();
+    private Compliance compliance = new Compliance();
 
     @Data
     public static class Chat {
@@ -109,5 +110,28 @@ public class KingAiProperties {
     public static class Audit {
         private boolean enabled = true;
         private int retentionDays = 180;
+    }
+
+    @Data
+    public static class Compliance {
+        private Pii pii = new Pii();
+        private Moderation moderation = new Moderation();
+    }
+
+    @Data
+    public static class Pii {
+        private boolean defaultEnabled = true;
+        private int maxCustomRules = 20;
+        private int streamHoldbackChars = 128;
+    }
+
+    @Data
+    public static class Moderation {
+        private com.king.ai.compliance.ModerationMode defaultMode =
+                com.king.ai.compliance.ModerationMode.OFF;
+        private boolean failClosedOnError = true;
+        private int externalTimeoutMs = 2000;
+        private String externalUrl = "";
+        private String externalToken = "";
     }
 }

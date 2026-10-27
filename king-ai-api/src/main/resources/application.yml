@@ -50,6 +50,17 @@ king-ai:
   audit:
     enabled: ${KING_AI_AUDIT_ENABLED:true}
     retention-days: ${KING_AI_AUDIT_RETENTION_DAYS:180}
+  compliance:
+    pii:
+      default-enabled: ${KING_AI_PII_DEFAULT_ENABLED:true}
+      max-custom-rules: 20
+      stream-holdback-chars: ${KING_AI_PII_STREAM_HOLDBACK:128}
+    moderation:
+      default-mode: ${KING_AI_MODERATION_MODE:OFF}
+      fail-closed-on-error: ${KING_AI_MODERATION_FAIL_CLOSED:true}
+      external-timeout-ms: ${KING_AI_MODERATION_TIMEOUT_MS:2000}
+      external-url: ${KING_AI_MODERATION_URL:}
+      external-token: ${KING_AI_MODERATION_TOKEN:}
   chat:
     max-history-messages: 20
     max-history-chars: 24000

@@ -110,10 +110,17 @@ public class AuditLogService {
      * Records an asynchronous chat or tool event where the servlet request context is no longer
      * available. Callers capture the request metadata before handing work to the chat executor.
      */
+    public void recordEvent(Long spaceId, Long actorId, String actorName, String action,
+                            String resourceType, String resourceId, String status, String detail,
+                            String ip, String userAgent, String requestId) {
+        persist(spaceId, actorId, actorName, action, resourceType, resourceId, status, detail,
+                ip, userAgent, requestId);
+    }
+
     public void recordChat(Long spaceId, Long actorId, String actorName, String action, String resourceId,
                            String status, String detail, String ip, String userAgent, String requestId) {
-        persist(spaceId, actorId, actorName, action, "chat", resourceId, status, detail, ip, userAgent,
-                requestId);
+        recordEvent(spaceId, actorId, actorName, action, "chat", resourceId, status, detail,
+                ip, userAgent, requestId);
     }
 
     private void write(HttpServletRequest request, String action, String resourceType, String resourceId,
