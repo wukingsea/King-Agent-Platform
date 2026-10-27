@@ -114,6 +114,13 @@ autoscaling:
   targetCPUUtilizationPercentage: 70
   targetActiveStreams: 80
 
+observability:
+  tracing:
+    enabled: false
+    endpoint: http://otel-collector.observability.svc.cluster.local:4318/v1/traces
+    sampleRate: 0.1
+  metrics:
+    scrapeAnnotations: true
 pdb:
   enabled: true
   minAvailable: 1
@@ -131,7 +138,7 @@ networkPolicy:
     otelCidrs: []
     objectStorageCidrs: []
     publicHttps: true
-    otelPort: 4317
+    otelPort: 4318
 
 persistence:
   exports:

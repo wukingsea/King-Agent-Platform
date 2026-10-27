@@ -91,3 +91,23 @@ Gauge），无需额外 exporter。
 ## 迁移
 - 生产使用 `pre-install/pre-upgrade` Job；`kubectl logs job/king-ai-migrate` 查看结果。
 - 内置依赖模式因 hook 运行时数据库尚未就绪，设置 `migration.enabled=false`，由 API 启动时迁移。
+
+## 可观测性
+
+chart 不内置 Prometheus、Grafana、Jaeger 或 collector；它们由平台侧部署。
+
+开启 trace 导出：
+
+```bash
+helm upgrade king-ai deploy/helm/king-ai -n king-ai \
+  --set observability.tracing.enabled=true \
+  --set observability.tracing.endpoint=http://otel-collector.observability.svc.cluster.local:4318/v1/traces \
+  --set observability.tracing.sampleRate=0.1 \
+  --set networkPolicy.egress.otelCidrs={10.0.40.0/24}
+```
+
+- `sampleRate` 生产默认 `0.1`；禁止长期使用 `1.0`。
+- NetworkPolicy 的 OTLP 端口是 `4318`（OTLP/HTTP）。如使用 gRPC 采集器，自行改端口并确认 exporter 配置一致。
+- API Pod 默认带 `prometheus.io/scrape=true` 注解，路径 `/actuator/prometheus`，端口 `8080`。Prometheus Operator 环境可由平台侧据此创建 ServiceMonitor。
+- chart 不创建 ServiceMonitor/PodMonitor CRD，避免在未安装 operator 的集群中安装失败。
+- 指标和 trace 标签不得包含用户、会话或消息标识；排障使用 requestId/traceId 日志关联。

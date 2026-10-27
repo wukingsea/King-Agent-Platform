@@ -114,4 +114,38 @@ else
   echo "kubeconform not installed; SKIPPED locally (CI deployment job enforces schema validation)" >&2
 fi
 
+helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set observability.tracing.enabled=true \
+  --set-json 'observability.tracing={"sampleRate": 0.2}' \
+  --set networkPolicy.enabled=true \
+  --set 'networkPolicy.egress.otelCidrs={10.0.40.0/24}' \
+  > "$WORK_DIR/observability.yaml"
+for needle in \
+  'OTEL_TRACING_EXPORT_ENABLED: "true"' \
+  'OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4318/v1/traces"' \
+  'KING_AI_TRACE_SAMPLE: "0.2"' \
+  'prometheus.io/scrape: "true"' \
+  'prometheus.io/path: "/actuator/prometheus"' \
+  'prometheus.io/port: "8080"' \
+  'port: 4318'; do
+  if ! grep -qF -- "$needle" "$WORK_DIR/observability.yaml"; then
+    echo "ASSERT FAILED: missing $needle in observability render" >&2
+    exit 1
+  fi
+done
+assert_not_contains "$WORK_DIR/observability.yaml" 'port: 4317'
+
+if helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set observability.tracing.sampleRate=2 >/dev/null 2>&1; then
+  echo "ASSERT FAILED: sampleRate above 1 must be rejected" >&2
+  exit 1
+fi
+
+if command -v kubeconform >/dev/null; then
+  kubeconform -strict -summary -kubernetes-version 1.29.0 "$WORK_DIR/observability.yaml"
+else
+  echo "kubeconform not installed; skipped observability schema validation" >&2
+  exit 1
+fi
+
 echo "render tests passed"

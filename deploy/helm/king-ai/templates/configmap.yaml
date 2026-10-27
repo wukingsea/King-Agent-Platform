@@ -12,3 +12,6 @@ data:
   KING_AI_DEMO_ENABLED: "false"
   KING_AI_EXPORT_DIR: "/app/data/exports"
   JAVA_OPTS: {{ .Values.api.javaOpts | quote }}
+  OTEL_TRACING_EXPORT_ENABLED: {{ .Values.observability.tracing.enabled | quote }}
+  OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: {{ .Values.observability.tracing.endpoint | quote }}
+  KING_AI_TRACE_SAMPLE: {{ .Values.observability.tracing.sampleRate | quote }}
