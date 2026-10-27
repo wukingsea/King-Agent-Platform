@@ -12,6 +12,16 @@ import com.king.ai.chat.entity.ChatSession;
 import com.king.ai.common.BizException;
 import com.king.ai.common.Texts;
 import com.king.ai.common.web.RequestIdFilter;
+import com.king.ai.compliance.ChatInputCompliance;
+import com.king.ai.compliance.ComplianceSettings;
+import com.king.ai.compliance.ComplianceSettingsService;
+import com.king.ai.compliance.ComplianceStreamGuard;
+import com.king.ai.compliance.ContentModerationException;
+import com.king.ai.compliance.ModerationContext;
+import com.king.ai.compliance.ModerationScan;
+import com.king.ai.compliance.ModerationService;
+import com.king.ai.compliance.RedactionResult;
+import com.king.ai.compliance.RedactionService;
 import com.king.ai.config.KingAiProperties;
 import com.king.ai.knowledge.KnowledgeService;
 import com.king.ai.knowledge.dto.RetrievedChunk;
@@ -87,6 +97,10 @@ public class ChatRuntime {
     private final ToolApprovalRegistry toolApprovalRegistry;
     private final AuditLogService auditLogService;
     private final LlmCircuitBreaker circuitBreaker;
+    private final ComplianceSettingsService complianceSettingsService;
+    private final ChatInputCompliance chatInputCompliance;
+    private final RedactionService redactionService;
+    private final ModerationService moderationService;
     private final ObjectMapper objectMapper;
     private final KingAiProperties properties;
     private final MeterRegistry meterRegistry;
@@ -120,6 +134,31 @@ public class ChatRuntime {
         int maxInput = Math.max(1000, properties.getChat().getMaxInputChars());
         if (message.length() > maxInput) {
             throw BizException.badRequest("消息长度不能超过 " + maxInput + " 个字符");
+        }
+        ComplianceSettings compliance = complianceSettingsService.effective(spaceId);
+        boolean publicChat = "PUBLIC".equalsIgnoreCase(Texts.blankToDefault(sourceType, ""));
+        ModerationContext inputContext = new ModerationContext(spaceId, publicChat, "input");
+        ChatInputCompliance.PreparedInput prepared;
+        try {
+            prepared = chatInputCompliance.prepare(message, compliance, inputContext);
+        } catch (ContentModerationException ex) {
+            ChatAuditContext audit = captureAuditContext();
+            auditLogService.recordEvent(spaceId, actor.userId(), actor.displayName(),
+                    "chat.moderation_blocked", "chat", null, AuditLogService.STATUS_DENIED,
+                    "surface=input, category=" + ex.category(),
+                    audit.ip(), audit.userAgent(), audit.requestId());
+            meterRegistry.counter("king.ai.compliance.moderation", "surface", "input",
+                    "action", "block", "category", ex.category()).increment();
+            throw BizException.badRequest("输入包含不合规内容，已被拦截");
+        }
+        String safeMessage = prepared.text();
+        if (prepared.redactedCount() > 0) {
+            meterRegistry.counter("king.ai.compliance.redactions", "surface", "input",
+                    "category", "any").increment(prepared.redactedCount());
+        }
+        if (prepared.masked()) {
+            meterRegistry.counter("king.ai.compliance.moderation", "surface", "input",
+                    "action", "warn", "category", "BLOCKLIST").increment();
         }
         ModelRuntimeService.ResolvedModel resolved = modelRuntimeService.resolveChat(spaceId, agent.modelId());
         meterRegistry.counter("king.ai.chat.requests", "source", sourceTag(sourceType)).increment();
@@ -166,7 +205,8 @@ public class ChatRuntime {
         ChatAuditContext auditContext = captureAuditContext();
         try {
             chatExecutor.execute(() -> run(emitter, requestId, token, actor, agent, resolved,
-                    sessionId, message, sourceType, locked, mdcContext, auditContext));
+                    sessionId, safeMessage, sourceType, locked, mdcContext, auditContext,
+                    compliance, publicChat, prepared.redactedCount(), prepared.masked()));
         } catch (RuntimeException ex) {
             activeEmitters.remove(requestId);
             cancellationRegistry.remove(requestId);
@@ -197,7 +237,9 @@ public class ChatRuntime {
     private void run(SseEmitter emitter, String requestId, CancellationToken token,
                      ChatActor actor, AgentRuntime agent, ModelRuntimeService.ResolvedModel resolved,
                      Long sessionId, String message, String sourceType, boolean locked,
-                     Map<String, String> mdcContext, ChatAuditContext auditContext) {
+                     Map<String, String> mdcContext, ChatAuditContext auditContext,
+                     ComplianceSettings compliance, boolean publicChat,
+                     int inputRedactions, boolean inputMasked) {
         if (mdcContext != null && !mdcContext.isEmpty()) {
             MDC.setContextMap(mdcContext);
         }
@@ -219,6 +261,14 @@ public class ChatRuntime {
         int completionTokens = 0;
         boolean truncated = false;
 
+        // 安全带必须在 try 外创建：回调 lambda 只能捕获 effectively-final 变量，finally 也要访问。
+        ComplianceStreamGuard contentGuard = new ComplianceStreamGuard(redactionService,
+                moderationService, compliance,
+                new ModerationContext(spaceId, publicChat, "output"), publicChat);
+        ComplianceStreamGuard reasoningGuard = new ComplianceStreamGuard(redactionService,
+                moderationService, compliance,
+                new ModerationContext(spaceId, publicChat, "reasoning"), publicChat);
+
         try {
             session = chatService.ensureSession(actor, agent.agentId(), sourceType, sessionId, message);
             List<LlmMessage> history = chatService.history(session.getId());
@@ -229,12 +279,23 @@ public class ChatRuntime {
 
             send(emitter, "meta", metaPayload(requestId, session, agent, resolved, sourceType));
 
+            if (inputRedactions > 0) {
+                send(emitter, "degraded", Map.of("reason", "pii_redacted",
+                        "surface", "input", "count", inputRedactions));
+            }
+            if (inputMasked) {
+                send(emitter, "degraded", Map.of("reason", "moderation_warn",
+                        "surface", "input", "category", "BLOCKLIST"));
+            }
+
             AgentBindings bindings = agent.bindings() == null ? AgentBindings.empty() : agent.bindings();
             String skillPrompt = skillPrompt(spaceId, bindings.skillIds());
             List<RetrievedChunk> retrieved = retrieve(spaceId, bindings.knowledgeBaseIds(), message,
                     actor.spaceRole());
             for (int i = 0; i < retrieved.size(); i++) {
-                Map<String, Object> citation = citationPayload(i + 1, retrieved.get(i));
+                RetrievedChunk chunk = retrieved.get(i);
+                RedactionResult safeSnippet = redactionService.redact(chunk.content(), compliance);
+                Map<String, Object> citation = citationPayload(i + 1, chunk, safeSnippet.text());
                 citations.add(citation);
                 send(emitter, "citation", citation);
             }
@@ -256,7 +317,8 @@ public class ChatRuntime {
                 token.throwIfCancelled();
                 boolean allowTools = round < maxRounds && !boundTools.isEmpty();
                 LlmResult result = streamChatWithRetry(resolved, messages, allowTools, toolDefinitions,
-                        agent, emitter, progressMessage, content, reasoning, trace, citations, lastFlush, token);
+                        agent, emitter, progressMessage, content, reasoning, trace, citations, lastFlush, token,
+                        contentGuard, reasoningGuard);
                 promptTokens += result.promptTokens();
                 completionTokens += result.completionTokens();
                 if ("length".equalsIgnoreCase(result.finishReason())) {
@@ -269,16 +331,31 @@ public class ChatRuntime {
                 for (ToolCall call : result.toolCalls()) {
                     token.throwIfCancelled();
                     BoundTool tool = toolIndex.get(call.name());
+                    RedactionResult argRedaction = redactionService.redact(call.arguments(), compliance);
+                    String toolArguments = argRedaction.text();
                     Map<String, Object> callPayload = new LinkedHashMap<>();
                     callPayload.put("id", call.id());
                     callPayload.put("name", call.name());
-                    callPayload.put("arguments", cap(call.arguments(), 8000));
+                    callPayload.put("arguments", cap(toolArguments, 8000));
                     callPayload.put("source", tool == null ? "UNKNOWN" : tool.source());
                     send(emitter, "tool_call", callPayload);
 
                     long toolStart = System.currentTimeMillis();
                     ToolOutcome outcome = executeTool(tool, call, spaceId, actor, agent.toolApprovalMode(),
-                            emitter, requestId, token);
+                            emitter, requestId, token, toolArguments);
+                    String toolText = outcome.text();
+                    RedactionResult toolRedaction = redactionService.redact(toolText, compliance);
+                    toolText = toolRedaction.text();
+                    ModerationScan toolScan = moderationService.scan(toolText, compliance,
+                            new ModerationContext(spaceId, publicChat, "tool"));
+                    if (toolScan.decision().blocking(publicChat)) {
+                        throw new ContentModerationException(toolScan.decision().category());
+                    }
+                    if (!argRedaction.hits().isEmpty() || !toolRedaction.hits().isEmpty()) {
+                        meterRegistry.counter("king.ai.compliance.redactions", "surface", "tool",
+                                "category", "any").increment(
+                                argRedaction.redactedCount() + toolRedaction.redactedCount());
+                    }
                     long toolDuration = System.currentTimeMillis() - toolStart;
                     String toolSource = tool == null ? "UNKNOWN" : tool.source();
                     meterRegistry.counter("king.ai.chat.tool_calls",
@@ -294,8 +371,8 @@ public class ChatRuntime {
                     traceItem.put("id", call.id());
                     traceItem.put("name", call.name());
                     traceItem.put("source", toolSource);
-                    traceItem.put("arguments", cap(call.arguments(), 8000));
-                    traceItem.put("result", cap(outcome.text(), properties.getChat().getMaxToolResultChars()));
+                    traceItem.put("arguments", cap(toolArguments, 8000));
+                    traceItem.put("result", cap(toolText, properties.getChat().getMaxToolResultChars()));
                     traceItem.put("error", outcome.error());
                     traceItem.put("durationMs", toolDuration);
                     trace.add(traceItem);
@@ -303,16 +380,28 @@ public class ChatRuntime {
                     Map<String, Object> resultPayload = new LinkedHashMap<>();
                     resultPayload.put("id", call.id());
                     resultPayload.put("name", call.name());
-                    resultPayload.put("result", cap(outcome.text(), 4000));
+                    resultPayload.put("result", cap(toolText, 4000));
                     resultPayload.put("error", outcome.error());
                     resultPayload.put("durationMs", toolDuration);
                     send(emitter, "tool_result", resultPayload);
 
                     messages.add(LlmMessage.tool(call.id(),
                             untrustedToolResult(call.name(),
-                                    cap(outcome.text(), properties.getChat().getMaxToolResultChars()))));
+                                    cap(toolText, properties.getChat().getMaxToolResultChars()))));
                 }
                 maybeFlush(progressMessage, content, reasoning, trace, citations, lastFlush, true);
+            }
+            // 循环结束后再 flush：轮次之间不能冲刷，否则跨轮次的手机号/身份证号
+            // 会被拆成两段分别输出，脱敏窗口失效。
+            String contentTail = contentGuard.flush();
+            if (!contentTail.isEmpty()) {
+                content.append(contentTail);
+                send(emitter, "content", Map.of("delta", contentTail));
+            }
+            String reasoningTail = reasoningGuard.flush();
+            if (!reasoningTail.isEmpty()) {
+                reasoning.append(reasoningTail);
+                send(emitter, "reasoning", Map.of("delta", reasoningTail));
             }
             maybeFlush(progressMessage, content, reasoning, trace, citations, lastFlush, true);
         } catch (ChatStreamClosedException ex) {
@@ -320,6 +409,18 @@ public class ChatRuntime {
             status = ChatService.STATUS_STOPPED;
         } catch (LlmCancelledException ex) {
             status = ChatService.STATUS_STOPPED;
+        } catch (ContentModerationException ex) {
+            status = ChatService.STATUS_FAILED;
+            errorMessage = "回复包含不合规内容，已终止生成";
+            auditLogService.recordEvent(spaceId, actor.userId(), actor.displayName(),
+                    "chat.moderation_blocked", "chat",
+                    session == null ? null : String.valueOf(session.getId()),
+                    AuditLogService.STATUS_DENIED,
+                    "surface=output, category=" + ex.category(),
+                    auditContext.ip(), auditContext.userAgent(), auditContext.requestId());
+            meterRegistry.counter("king.ai.compliance.moderation", "surface", "output",
+                    "action", "block", "category", ex.category()).increment();
+            sendQuietly(emitter, "error", Map.of("message", errorMessage));
         } catch (Throwable ex) {
             if (token.isCancelled()) {
                 status = ChatService.STATUS_STOPPED;
@@ -332,6 +433,13 @@ public class ChatRuntime {
             }
         } finally {
             long duration = System.currentTimeMillis() - startedAt;
+            Map<String, Integer> redactions = new java.util.LinkedHashMap<>();
+            redactions.putAll(contentGuard.countsByCategory());
+            reasoningGuard.countsByCategory().forEach((key, value) ->
+                    redactions.merge(key, value, Integer::sum));
+            redactions.forEach((category, count) ->
+                    meterRegistry.counter("king.ai.compliance.redactions",
+                            "surface", "output", "category", category).increment(count));
             if (assistant != null) {
                 try {
                     chatService.finishAssistant(assistant.getId(), content.toString(), reasoning.toString(),
@@ -348,6 +456,11 @@ public class ChatRuntime {
                 } catch (RuntimeException ex) {
                     log.warn("Failed to update chat session {}: {}", session.getId(), ex.getMessage());
                 }
+            }
+            if (!redactions.isEmpty()) {
+                sendQuietly(emitter, "degraded", Map.of("reason", "pii_redacted",
+                        "surface", "output",
+                        "count", redactions.values().stream().mapToInt(Integer::intValue).sum()));
             }
             if (assistant != null) {
                 sendQuietly(emitter, "usage", usagePayload(promptTokens, completionTokens));
@@ -419,10 +532,13 @@ public class ChatRuntime {
                                           StringBuilder content, StringBuilder reasoning,
                                           List<Map<String, Object>> trace,
                                           List<Map<String, Object>> citations, long[] lastFlush,
-                                          CancellationToken token) {
+                                          CancellationToken token,
+                                          ComplianceStreamGuard contentGuard,
+                                          ComplianceStreamGuard reasoningGuard) {
         try {
             return streamWithRetry(resolved, messages, allowTools, toolDefinitions, agent, emitter,
-                    progressMessage, content, reasoning, trace, citations, lastFlush, token);
+                    progressMessage, content, reasoning, trace, citations, lastFlush, token,
+                    contentGuard, reasoningGuard);
         } catch (LlmException ex) {
             if (agent.fallbackModelId() != null && !Objects.equals(agent.fallbackModelId(), agent.modelId())) {
                 try {
@@ -434,7 +550,8 @@ public class ChatRuntime {
                             "message", "主模型暂时不可用，已切换至降级模型",
                             "model", fallback.model().getModel()));
                     return streamWithRetry(fallback, messages, allowTools, toolDefinitions, agent, emitter,
-                            progressMessage, content, reasoning, trace, citations, lastFlush, token);
+                            progressMessage, content, reasoning, trace, citations, lastFlush, token,
+                            contentGuard, reasoningGuard);
                 } catch (RuntimeException fallbackError) {
                     log.warn("Fallback model failed: {}", fallbackError.getMessage());
                 }
@@ -449,7 +566,9 @@ public class ChatRuntime {
                                       StringBuilder content, StringBuilder reasoning,
                                       List<Map<String, Object>> trace,
                                       List<Map<String, Object>> citations, long[] lastFlush,
-                                      CancellationToken token) {
+                                      CancellationToken token,
+                                      ComplianceStreamGuard contentGuard,
+                                      ComplianceStreamGuard reasoningGuard) {
         String breakerKey = resolved.supplier().getId() + ":" + resolved.model().getModel();
         if (!circuitBreaker.allow(breakerKey)) {
             throw new LlmException("模型服务连续失败，已触发熔断，请稍后重试");
@@ -471,9 +590,13 @@ public class ChatRuntime {
                                 if (Texts.isBlank(delta)) {
                                     return;
                                 }
-                                reasoning.append(delta);
-                                send(emitter, "reasoning", Map.of("delta", delta));
-                                maybeFlush(progressMessage, content, reasoning, trace, citations, lastFlush, false);
+                                String safe = reasoningGuard.accept(delta);
+                                if (!safe.isEmpty()) {
+                                    reasoning.append(safe);
+                                    send(emitter, "reasoning", Map.of("delta", safe));
+                                    maybeFlush(progressMessage, content, reasoning, trace, citations,
+                                            lastFlush, false);
+                                }
                             }
 
                             @Override
@@ -481,9 +604,13 @@ public class ChatRuntime {
                                 if (Texts.isBlank(delta)) {
                                     return;
                                 }
-                                content.append(delta);
-                                send(emitter, "content", Map.of("delta", delta));
-                                maybeFlush(progressMessage, content, reasoning, trace, citations, lastFlush, false);
+                                String safe = contentGuard.accept(delta);
+                                if (!safe.isEmpty()) {
+                                    content.append(safe);
+                                    send(emitter, "content", Map.of("delta", safe));
+                                    maybeFlush(progressMessage, content, reasoning, trace, citations,
+                                            lastFlush, false);
+                                }
                             }
                         }, token);
                 circuitBreaker.success(breakerKey);
@@ -497,6 +624,8 @@ public class ChatRuntime {
                     // Discard partial output from the failed attempt so retries do not duplicate text.
                     content.setLength(contentMark);
                     reasoning.setLength(reasoningMark);
+                    contentGuard.reset();
+                    reasoningGuard.reset();
                     sendQuietly(emitter, "retry", Map.of("attempt", attempt + 1, "reset", true,
                             "message", "模型请求失败，正在重试..."));
                     try {
@@ -658,7 +787,7 @@ public class ChatRuntime {
 
     private ToolOutcome executeTool(BoundTool tool, ToolCall call, Long spaceId, ChatActor actor,
                                     String approvalMode, SseEmitter emitter, String requestId,
-                                    CancellationToken token) {
+                                    CancellationToken token, String displayArguments) {
         if (tool == null) {
             return new ToolOutcome("未知工具或工具未在智能体白名单中：" + call.name(), true);
         }
@@ -670,7 +799,8 @@ public class ChatRuntime {
             return new ToolOutcome("工具参数校验失败：" + validationError, true);
         }
         if (requiresApproval(tool.definition().name(), approvalMode)) {
-            boolean approved = awaitToolApproval(tool, call, actor, emitter, requestId, token);
+            boolean approved = awaitToolApproval(tool, call, actor, emitter, requestId, token,
+                    displayArguments);
             if (!approved) {
                 return new ToolOutcome("工具调用未获得人工批准，已跳过执行", true);
             }
@@ -695,17 +825,18 @@ public class ChatRuntime {
     }
 
     private boolean awaitToolApproval(BoundTool tool, ToolCall call, ChatActor actor,
-                                      SseEmitter emitter, String requestId, CancellationToken token) {
+                                      SseEmitter emitter, String requestId, CancellationToken token,
+                                      String displayArguments) {
         long timeoutMs = 120_000L;
         CompletableFuture<Boolean> decision = toolApprovalRegistry.register(requestId, call.id(),
-                actor.spaceId(), actor.key(), call.name(), tool.source(), cap(call.arguments(), 4000));
+                actor.spaceId(), actor.key(), call.name(), tool.source(), cap(displayArguments, 4000));
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
             payload.put("requestId", requestId);
             payload.put("callId", call.id());
             payload.put("name", call.name());
             payload.put("source", tool.source());
-            payload.put("arguments", cap(call.arguments(), 4000));
+            payload.put("arguments", cap(displayArguments, 4000));
             payload.put("expiresInMs", timeoutMs);
             send(emitter, "tool_approval", payload);
             long deadline = System.currentTimeMillis() + timeoutMs;
@@ -856,7 +987,7 @@ public class ChatRuntime {
         }
     }
 
-    private Map<String, Object> citationPayload(int index, RetrievedChunk chunk) {
+    private Map<String, Object> citationPayload(int index, RetrievedChunk chunk, String snippet) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("index", index);
         payload.put("chunkId", chunk.chunkId());
@@ -866,7 +997,7 @@ public class ChatRuntime {
         payload.put("knowledgeBaseName", chunk.knowledgeBaseName());
         payload.put("chunkIndex", chunk.chunkIndex());
         payload.put("score", Math.round(chunk.score() * 1000) / 1000.0);
-        payload.put("snippet", cap(chunk.content(), 600));
+        payload.put("snippet", cap(snippet, 600));
         return payload;
     }
 
