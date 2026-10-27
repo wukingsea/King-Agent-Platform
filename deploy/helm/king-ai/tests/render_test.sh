@@ -32,6 +32,7 @@ assert_contains '/actuator/health/liveness'
 assert_contains '/actuator/health/readiness'
 assert_contains 'name: API_UPSTREAM'
 assert_contains 'helm.sh/hook: pre-install,pre-upgrade'
+assert_contains 'helm.sh/hook-weight: "-20"'
 assert_contains 'value: prod,migrate'
 assert_contains 'kind: PersistentVolumeClaim'
 
