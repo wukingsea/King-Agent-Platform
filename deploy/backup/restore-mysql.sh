@@ -14,6 +14,8 @@ require_env BACKUP_FILE
 
 TARGET_DB="$RESTORE_TARGET_DATABASE"
 [[ "$TARGET_DB" =~ ^[A-Za-z0-9_]+$ ]] || die "invalid target database name: $TARGET_DB"
+# prod 名守卫按大小写不敏感匹配，防止 king_ai_PROD 之类变体绕过。
+shopt -s nocasematch
 [[ "$TARGET_DB" != *prod* || "${RESTORE_ALLOW_PROD_NAME:-0}" == "1" ]] \
   || die "refusing target database containing 'prod': $TARGET_DB"
 if [[ "$TARGET_DB" == "${MYSQL_DATABASE:-}" && "${RESTORE_ALLOW_SAME_DB:-0}" != "1" ]]; then
@@ -27,7 +29,7 @@ MYSQL_SSL_MODE="${MYSQL_SSL_MODE:-REQUIRED}"
 # 正式演练必须显式提供 RESTORE_MYSQL_USER/RESTORE_MYSQL_PASSWORD。
 RESTORE_USER="${RESTORE_MYSQL_USER:-$MYSQL_USER}"
 RESTORE_PASSWORD="${RESTORE_MYSQL_PASSWORD:-$MYSQL_PASSWORD}"
-[[ -n "${RESTORE_MYSQL_USER:-}" && -n "${RESTORE_MYSQL_PASSWORD:-}" || "$RESTORE_USER" == "$MYSQL_USER" ]] \
+[[ (-n "${RESTORE_MYSQL_USER:-}" && -n "${RESTORE_MYSQL_PASSWORD:-}") || (-z "${RESTORE_MYSQL_USER:-}" && -z "${RESTORE_MYSQL_PASSWORD:-}") ]] \
   || die "RESTORE_MYSQL_USER and RESTORE_MYSQL_PASSWORD must be set together"
 export MYSQL_PWD="$RESTORE_PASSWORD"
 MYSQL_ARGS=(
