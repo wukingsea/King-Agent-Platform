@@ -11,6 +11,7 @@ import com.king.ai.common.security.UserPrincipal;
 import com.king.ai.common.web.RequestIdFilter;
 import com.king.ai.config.KingAiProperties;
 import com.king.ai.system.dto.UserView;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,7 @@ public class AuditLogService {
 
     private final AuditLogMapper auditLogMapper;
     private final KingAiProperties properties;
+    private final MeterRegistry meterRegistry;
 
     public void recordRequest(HttpServletRequest request, Object handler, UserPrincipal principal,
                               String status, String detail) {
@@ -192,6 +194,7 @@ public class AuditLogService {
             entry.setCreatedAt(LocalDateTime.now());
             auditLogMapper.insert(entry);
         } catch (RuntimeException ex) {
+            meterRegistry.counter("king.ai.audit.write.failures").increment();
             log.warn("Failed to persist audit log ({}): {}", action, ex.getMessage());
         }
     }
