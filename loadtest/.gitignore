@@ -1,0 +1,3 @@
+bin/
+results/
+# baselines/ is intentionally committed as measurement evidence.
