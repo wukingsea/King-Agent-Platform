@@ -7,6 +7,7 @@ metadata:
 data:
   KING_AI_ALLOWED_ORIGINS: {{ .Values.api.allowedOrigins | default (ternary (printf "https://%s" .Values.ingress.host) "" .Values.ingress.enabled) | quote }}
   KING_AI_TRUST_FORWARDED_HEADERS: "true"
+  KING_AI_TRUSTED_PROXY_HOPS: {{ .Values.api.trustedProxyHops | default 1 | quote }}
   KING_AI_COOKIE_SECURE: "true"
   KING_AI_BLOCK_PRIVATE_NETWORKS: "true"
   KING_AI_DEMO_ENABLED: "false"

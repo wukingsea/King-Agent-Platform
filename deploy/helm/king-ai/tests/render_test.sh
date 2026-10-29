@@ -41,12 +41,16 @@ assert_contains 'name: API_UPSTREAM'
 assert_contains 'helm.sh/hook: pre-install,pre-upgrade'
 assert_contains 'helm.sh/hook-weight: "-20"'
 assert_contains 'value: prod,migrate'
-assert_contains 'kind: PersistentVolumeClaim'
 assert_contains 'kind: HorizontalPodAutoscaler'
-assert_contains 'king_ai_chat_active'
 assert_contains 'kind: PodDisruptionBudget'
 assert_contains 'kind: NetworkPolicy'
 assert_contains 'policyTypes:'
+# Prometheus must be able to scrape through the default-deny policy.
+assert_contains 'kubernetes.io/metadata.name: monitoring'
+
+# Default exports mode is emptyDir, so no PVC is provisioned by default.
+assert_not_contains "$WORK_DIR/rendered.yaml" 'kind: PersistentVolumeClaim'
+assert_not_contains "$WORK_DIR/rendered.yaml" 'king_ai_chat_active'
 
 # Default render (external dependencies, migration on) must not create any
 # Secret: all credentials come from pre-created Secrets (see chart README).
@@ -74,6 +78,17 @@ if grep -qE 'kind: (Job|PersistentVolumeClaim)' "$WORK_DIR/rendered-disabled.yam
   exit 1
 fi
 
+# Opt-in features: PVC for durable exports and the optional chat-stream HPA metric.
+helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set persistence.exports.mode=pvc \
+  --set autoscaling.targetActiveStreams=80 > "$WORK_DIR/opt-in.yaml"
+for needle in 'kind: PersistentVolumeClaim' 'king_ai_chat_active' 'averageValue: "80"'; do
+  if ! grep -qF -- "$needle" "$WORK_DIR/opt-in.yaml"; then
+    echo "ASSERT FAILED: missing $needle in opt-in render" >&2
+    exit 1
+  fi
+done
+
 # Ingress render: SSE proxy tuning and cookie affinity annotations (Task 5).
 helm template king-ai "$CHART_DIR" --namespace king-ai \
   --set ingress.enabled=true --set ingress.host=ai.example.com > "$WORK_DIR/ingress.yaml"
@@ -86,6 +101,25 @@ for needle in \
     exit 1
   fi
 done
+
+# The TLS Secret is external by default; rendering one requires cert and key.
+assert_not_contains "$WORK_DIR/ingress.yaml" 'kind: Secret'
+helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set ingress.enabled=true \
+  --set ingress.tls.create=true \
+  --set ingress.tls.crt=dummy-cert \
+  --set ingress.tls.key=dummy-key > "$WORK_DIR/tls.yaml"
+for needle in 'kind: Secret' 'type: kubernetes.io/tls' 'name: king-ai-tls' 'tls.crt:'; do
+  if ! grep -qF -- "$needle" "$WORK_DIR/tls.yaml"; then
+    echo "ASSERT FAILED: missing $needle in TLS render" >&2
+    exit 1
+  fi
+done
+if helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set ingress.enabled=true --set ingress.tls.create=true >/dev/null 2>&1; then
+  echo "ASSERT FAILED: ingress.tls.create=true without crt/key must be rejected" >&2
+  exit 1
+fi
 
 # Kind (bundled dev dependencies) render: the Opaque dev Secrets (hook-weight
 # -30, ahead of the service account -20 and the migrate Job -10), the

@@ -2,6 +2,10 @@ King AI Platform {{ .Chart.AppVersion }} installed as release {{ .Release.Name }
 
 {{- if .Values.ingress.enabled }}
 URL: {{ ternary "https" "http" .Values.ingress.tls.enabled }}://{{ .Values.ingress.host }}
+{{- if and .Values.ingress.tls.enabled (not .Values.ingress.tls.create) }}
+TLS: create Secret "{{ .Values.ingress.tls.secretName }}" in namespace {{ .Release.Namespace }}
+     (or set ingress.tls.create=true with ingress.tls.crt/key).
+{{- end }}
 {{- else }}
 API: kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "king-ai.apiName" . }} 8080:8080
 UI:  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "king-ai.uiName" . }} 8080:8080

@@ -10,6 +10,8 @@ api:
     pullPolicy: IfNotPresent
   replicaCount: 2
   allowedOrigins: ""
+  # Number of reverse proxies (ingress-nginx + any cloud LB) in front of the API.
+  trustedProxyHops: 1
   javaOpts: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
   resources:
     requests:
@@ -102,6 +104,11 @@ ingress:
   tls:
     enabled: true
     secretName: king-ai-tls
+    # Set create=true and provide a PEM certificate/key to let the chart manage
+    # the TLS Secret. Leave false when cert-manager or another controller owns it.
+    create: false
+    crt: ""
+    key: ""
   sse:
     proxyReadTimeout: 600
     proxySendTimeout: 600
@@ -112,7 +119,10 @@ autoscaling:
   minReplicas: 2
   maxReplicas: 10
   targetCPUUtilizationPercentage: 70
-  targetActiveStreams: 80
+  # Custom metric scaling needs prometheus-adapter exposing king_ai_chat_active.
+  # Leave empty on clusters without the adapter: an unavailable custom metric
+  # stops the HPA from computing any replica count, disabling CPU scaling too.
+  targetActiveStreams: ""
 
 observability:
   tracing:
@@ -131,6 +141,13 @@ networkPolicy:
   ingressPodLabels:
     app.kubernetes.io/name: ingress-nginx
   dnsNamespace: kube-system
+  # Prometheus scrapes /actuator/prometheus directly; without this ingress rule
+  # the default-deny policy blocks every scrape in a NetworkPolicy-enforcing CNI.
+  metrics:
+    enabled: true
+    namespace: monitoring
+    podLabels:
+      app.kubernetes.io/name: prometheus
   egress:
     databaseCidrs: []
     redisCidrs: []
@@ -142,14 +159,19 @@ networkPolicy:
 
 persistence:
   exports:
+    # enabled only provisions the PVC when mode=pvc. An exports volume is always
+    # mounted, so the API never writes into the read-only root filesystem.
     enabled: true
-    mode: pvc
+    # emptyDir is installable on every cluster: exports survive pod lifetime but
+    # not rescheduling (TTL is 24h by default). Switch to pvc for durable exports
+    # and pick an accessMode the StorageClass actually supports.
+    mode: emptyDir
     size: 20Gi
     storageClass: ""
-    # ReadWriteMany requires an RWX-capable StorageClass (NFS, CephFS, EFS, ...).
-    # Many private clusters only provide RWO classes; set accessMode: ReadWriteOnce
-    # if you run a single API replica or accept exports being pinned to one node.
-    accessMode: ReadWriteMany
+    # ReadWriteMany requires an RWX-capable StorageClass (NFS, CephFS, EFS, ...);
+    # with ReadWriteOnce and more than one API replica, exports only work on the
+    # node that owns the volume.
+    accessMode: ReadWriteOnce
 
 migration:
   # Runs as the Job "<fullname>-migrate" (templates land in a later stage task)

@@ -1,8 +1,10 @@
 # King AI Helm Chart
 
 ## 前置条件
-- Kubernetes 1.28+，Helm 3.15+，默认 StorageClass（或设置 `persistence.exports.storageClass`）
-- 外部 MySQL 8.4 / Redis 7 / Milvus 2.5；Prometheus Adapter（启用 HPA 自定义指标时）
+- Kubernetes 1.28+，Helm 3.15+
+- 外部 MySQL 8.4 / Redis 7 / Milvus 2.5
+- 默认使用 emptyDir 存导出文件，无需 StorageClass；启用 `persistence.exports.mode=pvc` 时才需要可用的 StorageClass
+- 仅当 `autoscaling.targetActiveStreams` 非空时才需要 Prometheus Adapter
 
 ## 创建 Secret
 ```bash
@@ -69,14 +71,27 @@ API 容器在启动阶段自行运行 Flyway。
   render_test.sh 会大声跳过 schema 校验，由 CI 兜底强制。
 
 ## 自动扩缩容
-`autoscaling.enabled=true` 依赖 Prometheus Adapter 提供
-`king_ai_chat_active` 自定义指标；未部署 Prometheus Adapter 时请保持
-`autoscaling.enabled=false`。该指标由应用内直接暴露（ChatRuntime 的
-Gauge），无需额外 exporter。
+默认 HPA 只按 CPU 扩缩容，可在任何集群安装。若集群已部署 Prometheus
+Adapter 并暴露 `king_ai_chat_active`，设置
+`autoscaling.targetActiveStreams=80` 追加按活跃流扩容的 Pods 指标。
+未安装适配器时保持该值为空：不可用的自定义指标会让 HPA 无法计算副本数，
+连 CPU 伸缩也会失效。该指标由应用内直接暴露（ChatRuntime 的 Gauge），
+无需额外 exporter。
+
+## TLS
+设置 `ingress.enabled=true` 时默认引用 `ingress.tls.secretName`
+（默认 `king-ai-tls`），由平台侧（cert-manager / sealed-secrets）创建。
+如需 chart 托管证书，设置：
+
+```bash
+--set ingress.tls.create=true \
+--set-file ingress.tls.crt=./tls.crt \
+--set-file ingress.tls.key=./tls.key
+```
 
 ## 限制
 - SSE 流在 Pod 滚动升级时会被终止；断线恢复在 P2-2 实现。
-- 启用 `persistence.exports.mode=pvc` 时默认要求 ReadWriteMany；否则将 API 限制为单副本或等待 P2-3 对象存储。
+- 导出目录始终挂载：默认 emptyDir，Pod 重建后导出文件丢失（导出 TTL 为 24 小时）。需要持久化时启用 `persistence.exports.mode=pvc`，多副本需 ReadWriteMany 的 StorageClass；只有 ReadWriteOnce 时请将 `api.replicaCount` 设为 1。
 - NetworkPolicy 的实际执行取决于 CNI：kind 默认 CNI 不执行 NetworkPolicy
   （仅渲染生效）；生产环境必须使用支持 NetworkPolicy 的 CNI
   （Calico/Cilium 等）并验证策略真实生效。
@@ -109,5 +124,9 @@ helm upgrade king-ai deploy/helm/king-ai -n king-ai \
 - `sampleRate` 生产默认 `0.1`；禁止长期使用 `1.0`。
 - NetworkPolicy 的 OTLP 端口是 `4318`（OTLP/HTTP）。如使用 gRPC 采集器，自行改端口并确认 exporter 配置一致。
 - API Pod 默认带 `prometheus.io/scrape=true` 注解，路径 `/actuator/prometheus`，端口 `8080`。Prometheus Operator 环境可由平台侧据此创建 ServiceMonitor。
+- 启用 NetworkPolicy 时，chart 默认放行 `monitoring` 命名空间中带
+  `app.kubernetes.io/name=prometheus` 标签的 Pod 抓取 8080 端口；命名空间或
+  标签不同请覆盖 `networkPolicy.metrics.namespace` / `networkPolicy.metrics.podLabels`，
+  或设置 `networkPolicy.metrics.enabled=false` 自行管理。
 - chart 不创建 ServiceMonitor/PodMonitor CRD，避免在未安装 operator 的集群中安装失败。
 - 指标和 trace 标签不得包含用户、会话或消息标识；排障使用 requestId/traceId 日志关联。

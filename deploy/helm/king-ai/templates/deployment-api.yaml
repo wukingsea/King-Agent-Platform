@@ -102,19 +102,15 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.persistence.exports.enabled }}
             - name: exports
               mountPath: /app/data/exports
-            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
-        {{- if .Values.persistence.exports.enabled }}
         - name: exports
-          {{- if eq .Values.persistence.exports.mode "pvc" }}
+          {{- if and .Values.persistence.exports.enabled (eq .Values.persistence.exports.mode "pvc") }}
           persistentVolumeClaim:
             claimName: {{ include "king-ai.fullname" . }}-exports
           {{- else }}
           emptyDir: {}
           {{- end }}
-        {{- end }}

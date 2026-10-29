@@ -23,11 +23,13 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- with .Values.autoscaling.targetActiveStreams }}
     - type: Pods
       pods:
         metric:
           name: king_ai_chat_active
         target:
           type: AverageValue
-          averageValue: {{ .Values.autoscaling.targetActiveStreams | quote }}
+          averageValue: {{ . | quote }}
+    {{- end }}
 {{- end }}
