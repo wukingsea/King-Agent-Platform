@@ -1,6 +1,7 @@
 package com.king.ai.config;
 
 import com.king.ai.chat.RedisChatCancellationRegistry;
+import com.king.ai.chat.RedisToolApprovalRegistry;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,12 +17,16 @@ public class RedisStateConfig {
 
     @Bean
     public RedisMessageListenerContainer chatCancellationListenerContainer(
-            RedisConnectionFactory connectionFactory, RedisChatCancellationRegistry registry) {
+            RedisConnectionFactory connectionFactory, RedisChatCancellationRegistry registry,
+            RedisToolApprovalRegistry toolApprovalRegistry) {
         RedisMessageListenerContainer container = new ManualStartRedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
         container.addMessageListener((message, pattern) ->
                         registry.cancelLocal(new String(message.getBody(), StandardCharsets.UTF_8)),
                 new ChannelTopic(RedisChatCancellationRegistry.CANCEL_CHANNEL));
+        container.addMessageListener((message, pattern) ->
+                        toolApprovalRegistry.onDecision(new String(message.getBody(), StandardCharsets.UTF_8)),
+                new ChannelTopic(RedisToolApprovalRegistry.DECISION_CHANNEL));
         return container;
     }
 

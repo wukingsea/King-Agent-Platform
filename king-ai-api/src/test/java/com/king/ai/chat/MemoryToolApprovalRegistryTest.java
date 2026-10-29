@@ -6,9 +6,9 @@ import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class ToolApprovalRegistryTest {
+class MemoryToolApprovalRegistryTest {
 
-    private final ToolApprovalRegistry registry = new ToolApprovalRegistry();
+    private final ToolApprovalRegistry registry = new MemoryToolApprovalRegistry();
 
     @Test
     void ownerCanApproveOwnPendingCall() {
