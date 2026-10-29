@@ -2,6 +2,7 @@ package com.king.ai.compliance.retention;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.king.ai.audit.AuditLogService;
+import com.king.ai.common.JobLock;
 import com.king.ai.compliance.ComplianceSettings;
 import com.king.ai.compliance.ComplianceSettingsService;
 import com.king.ai.compliance.RedactionService;
@@ -18,11 +19,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.zip.GZIPOutputStream;
 
 /**
@@ -34,10 +37,14 @@ import java.util.zip.GZIPOutputStream;
 @Slf4j
 public class RetentionJob {
 
+    private static final String JOB_LOCK_NAME = "compliance-retention";
+    private static final Duration JOB_LOCK_TTL = Duration.ofHours(2);
+
     private final RetentionPolicyService policyService;
     private final JdbcTemplate jdbcTemplate;
     private final LegalHoldService legalHoldService;
     private final AuditLogService auditLogService;
+    private final JobLock jobLock;
     private final KingAiProperties properties;
     private final ExportStorage storage;
     private final ObjectMapper objectMapper;
@@ -50,16 +57,25 @@ public class RetentionJob {
         if (!properties.getCompliance().getRetention().isEnabled()) {
             return;
         }
-        boolean dryRun = properties.getCompliance().getRetention().isDryRun();
-        for (Long spaceId : policyService.spacesWithPolicies()) {
-            for (RetentionPolicy policy : policyService.enabledPolicies(spaceId)) {
-                try {
-                    purge(spaceId, policy, dryRun, 0L);
-                } catch (RuntimeException ex) {
-                    log.warn("保留清理任务执行失败：spaceId={}, type={}, reason={}",
-                            spaceId, policy.getResourceType(), ex.getClass().getSimpleName());
+        String owner = UUID.randomUUID().toString();
+        if (!jobLock.tryAcquire(JOB_LOCK_NAME, owner, JOB_LOCK_TTL)) {
+            log.info("保留清理任务已由其他实例执行，跳过本轮");
+            return;
+        }
+        try {
+            boolean dryRun = properties.getCompliance().getRetention().isDryRun();
+            for (Long spaceId : policyService.spacesWithPolicies()) {
+                for (RetentionPolicy policy : policyService.enabledPolicies(spaceId)) {
+                    try {
+                        purge(spaceId, policy, dryRun, 0L);
+                    } catch (RuntimeException ex) {
+                        log.warn("保留清理任务执行失败：spaceId={}, type={}, reason={}",
+                                spaceId, policy.getResourceType(), ex.getClass().getSimpleName());
+                    }
                 }
             }
+        } finally {
+            jobLock.release(JOB_LOCK_NAME, owner);
         }
     }
 

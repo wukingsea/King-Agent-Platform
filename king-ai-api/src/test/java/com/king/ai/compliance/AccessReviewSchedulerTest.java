@@ -3,9 +3,11 @@ package com.king.ai.compliance;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.king.ai.common.JobLock;
 import com.king.ai.compliance.access.AccessReviewScheduler;
 import com.king.ai.compliance.access.AccessReviewService;
 import com.king.ai.system.SpaceService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
@@ -13,8 +15,11 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -24,7 +29,13 @@ class AccessReviewSchedulerTest {
 
     private final SpaceService spaces = mock(SpaceService.class);
     private final AccessReviewService reviews = mock(AccessReviewService.class);
-    private final AccessReviewScheduler scheduler = new AccessReviewScheduler(spaces, reviews);
+    private final JobLock lock = mock(JobLock.class);
+    private final AccessReviewScheduler scheduler = new AccessReviewScheduler(spaces, reviews, lock);
+
+    @BeforeEach
+    void acquireLock() {
+        when(lock.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+    }
 
     @Test
     void generatesReviewForEverySpaceAsSystem() {
@@ -65,6 +76,26 @@ class AccessReviewSchedulerTest {
                         .doesNotContain("p@ss")
                         .doesNotContain("jdbc")
                         .doesNotContain("user=admin"));
+    }
+
+    @Test
+    void skipsRunWhenAnotherInstanceHoldsTheLock() {
+        when(lock.tryAcquire(anyString(), anyString(), any())).thenReturn(false);
+
+        scheduler.quarterly();
+
+        verifyNoInteractions(spaces, reviews);
+        verify(lock, never()).release(anyString(), anyString());
+    }
+
+    @Test
+    void releasesLockAfterRun() {
+        when(spaces.allSpaceIds()).thenReturn(List.of(1L));
+
+        scheduler.quarterly();
+
+        verify(reviews).generate(1L, 0L);
+        verify(lock).release(anyString(), anyString());
     }
 
     @Test

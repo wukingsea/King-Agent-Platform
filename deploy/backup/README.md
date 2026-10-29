@@ -42,6 +42,9 @@ deploy/backup/milvus-backup.sh
 - MySQL：RESTORE_CONFIRM=RESTORE RESTORE_TARGET_DATABASE=king_ai_restore BACKUP_FILE=... restore-mysql.sh
 - Milvus：MILVUS_RESTORE_CONFIRM=yes MILVUS_BACKUP_NAME=... restore-milvus.sh
 - 先恢复到隔离数据库/collection 后缀，再切换流量。
+- MySQL 恢复会读取 dump 同目录的 `manifest.json`（可用 `RESTORE_MANIFEST_FILE` 指定），
+  校验 `file` 与 `sha256`：manifest 缺失、文件名不符或校验和不一致都会直接退出。
+  仅当明确接受风险时才可用 `RESTORE_SKIP_CHECKSUM=1` 跳过，并在演练记录中注明原因。
 
 ## 7. 校验
 verify.sh 检查 Flyway、用户/空间/会话/消息行数、孤儿消息、抽样消息、API 健康、
@@ -65,5 +68,5 @@ docs/operations/backup-drill-YYYY-MM-DD.md，并由值班负责人签字。
 ## 11. 版本要求与已知限制
 - mysqldump 需 ≥ 8.0.26（`--source-data=2` 语法）；旧版本会直接报错，或使 manifest 的 binlog 字段为空。
 - binlog 归档假定 log-bin 基名为 `mysql-bin`（如 `mysql-bin.000042`）；其他基名的 binlog 会被静默跳过——请统一基名或有意识地调整脚本正则。
-- 备份目录中缺少 `manifest.json` 即表示该次备份失败（dump 中断产生截断文件），禁止用于恢复。
+- 备份目录中缺少 `manifest.json` 即表示该次备份失败（dump 中断产生截断文件），禁止用于恢复；restore-mysql.sh 默认据此拒绝恢复。
 - restore-mysql.sh 在库名字符集校验之后设置 `shopt -s nocasematch`：prod 名守卫与同库守卫按大小写不敏感匹配（宁可错杀，方向为 fail-closed）；`RESTORE_CONFIRM=RESTORE` 本身仍区分大小写。

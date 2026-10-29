@@ -194,8 +194,14 @@ public class AuditLogService {
             entry.setCreatedAt(LocalDateTime.now());
             auditLogMapper.insert(entry);
         } catch (RuntimeException ex) {
-            meterRegistry.counter("king.ai.audit.write.failures").increment();
-            log.warn("Failed to persist audit log ({}): {}", action, ex.getMessage());
+            // 指标与日志都是失败后的观测手段，任何一环再失败都不能把异常抛回业务请求。
+            try {
+                meterRegistry.counter("king.ai.audit.write.failures").increment();
+            } catch (RuntimeException ignored) {
+                // 指标后端不可用时只能放弃这一路信号。
+            }
+            log.error("审计写入失败：action={}, requestId={}, reason={}",
+                    action, requestId, ex.getClass().getSimpleName());
         }
     }
 

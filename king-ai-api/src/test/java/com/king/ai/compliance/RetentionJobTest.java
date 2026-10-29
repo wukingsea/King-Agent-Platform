@@ -2,6 +2,7 @@ package com.king.ai.compliance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.king.ai.audit.AuditLogService;
+import com.king.ai.common.JobLock;
 import com.king.ai.compliance.export.ExportStorage;
 import com.king.ai.compliance.retention.LegalHoldService;
 import com.king.ai.compliance.retention.RetentionJob;
@@ -327,6 +328,39 @@ class RetentionJobTest {
                 any(), any(), any());
     }
 
+    @Test
+    void runSkipsWhenAnotherInstanceHoldsTheLock() {
+        Fixture f = new Fixture();
+        f.properties.getCompliance().getRetention().setEnabled(true);
+        when(f.lock.tryAcquire(anyString(), anyString(), any())).thenReturn(false);
+
+        f.job.run();
+
+        verify(f.policies, never()).spacesWithPolicies();
+        verify(f.lock, never()).release(anyString(), anyString());
+    }
+
+    @Test
+    void runReleasesLockAfterCompletion() {
+        Fixture f = new Fixture();
+        f.properties.getCompliance().getRetention().setEnabled(true);
+        when(f.policies.spacesWithPolicies()).thenReturn(List.of());
+
+        f.job.run();
+
+        verify(f.lock).release(anyString(), anyString());
+    }
+
+    @Test
+    void disabledJobDoesNotTouchTheLock() {
+        Fixture f = new Fixture();
+
+        f.job.run();
+
+        verify(f.lock, never()).tryAcquire(anyString(), anyString(), any());
+        verify(f.policies, never()).spacesWithPolicies();
+    }
+
     private static RetentionPolicy policy(String type, boolean archive) {
         RetentionPolicy policy = new RetentionPolicy();
         policy.setSpaceId(1L);
@@ -384,6 +418,7 @@ class RetentionJobTest {
         private final JdbcTemplate jdbc = mock(JdbcTemplate.class);
         private final LegalHoldService holds = mock(LegalHoldService.class);
         private final AuditLogService audit = mock(AuditLogService.class);
+        private final JobLock lock = mock(JobLock.class);
         private final ExportStorage storage;
         private final KingAiProperties properties = new KingAiProperties();
         private final SimpleMeterRegistry registry = new SimpleMeterRegistry();
@@ -395,7 +430,8 @@ class RetentionJobTest {
 
         private Fixture(ExportStorage storage) {
             this.storage = storage;
-            this.job = new RetentionJob(policies, jdbc, holds, audit,
+            when(lock.tryAcquire(anyString(), anyString(), any())).thenReturn(true);
+            this.job = new RetentionJob(policies, jdbc, holds, audit, lock,
                     properties, storage, new ObjectMapper(), registry,
                     new RedactionService(), mock(ComplianceSettingsService.class));
         }

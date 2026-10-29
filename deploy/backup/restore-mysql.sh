@@ -39,6 +39,25 @@ MYSQL_ARGS=(
   --ssl-mode="$MYSQL_SSL_MODE"
 )
 
+# manifest 与 dump 同目录；校验和必须与备份时写入的 manifest 一致，避免恢复被截断或串包的备份。
+MANIFEST_FILE="${RESTORE_MANIFEST_FILE:-$(dirname "$BACKUP_FILE")/manifest.json}"
+if [[ "${RESTORE_SKIP_CHECKSUM:-0}" == "1" ]]; then
+  log "WARNING: RESTORE_SKIP_CHECKSUM=1, backup checksum was not verified"
+else
+  [[ -f "$MANIFEST_FILE" ]] \
+    || die "backup manifest not found: $MANIFEST_FILE (set RESTORE_MANIFEST_FILE, or RESTORE_SKIP_CHECKSUM=1 to bypass)"
+  EXPECTED_SHA="$(sed -n 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([0-9A-Fa-f]\{64\}\)".*/\1/p' "$MANIFEST_FILE" | head -n 1)"
+  [[ -n "$EXPECTED_SHA" ]] || die "backup manifest has no sha256: $MANIFEST_FILE"
+  EXPECTED_FILE="$(sed -n 's/.*"file"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$MANIFEST_FILE" | head -n 1)"
+  if [[ -n "$EXPECTED_FILE" && "$EXPECTED_FILE" != "$(basename "$BACKUP_FILE")" ]]; then
+    die "manifest describes $EXPECTED_FILE, not $(basename "$BACKUP_FILE")"
+  fi
+  ACTUAL_SHA="$(sha256 "$BACKUP_FILE")"
+  [[ "$ACTUAL_SHA" == "$EXPECTED_SHA" ]] \
+    || die "backup checksum mismatch: expected $EXPECTED_SHA, got $ACTUAL_SHA"
+  log "Backup checksum verified: sha256=$ACTUAL_SHA"
+fi
+
 if [[ "${RESTORE_DRY_RUN:-0}" == "1" ]]; then
   log "DRY-RUN create database $TARGET_DB and load $BACKUP_FILE"
   exit 0
