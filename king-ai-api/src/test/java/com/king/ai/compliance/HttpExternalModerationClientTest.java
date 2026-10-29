@@ -3,6 +3,7 @@ package com.king.ai.compliance;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.king.ai.common.web.OutboundUrlGuard;
 import com.king.ai.config.KingAiProperties;
+import okhttp3.Dns;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +21,7 @@ class HttpExternalModerationClientTest {
         properties.getCompliance().getModeration().setExternalUrl("http://127.0.0.1:9000/check");
         OutboundUrlGuard guard = mock(OutboundUrlGuard.class);
         when(guard.violation("http://127.0.0.1:9000/check")).thenReturn("不允许访问内网地址");
+        when(guard.dns()).thenReturn(Dns.SYSTEM);
         HttpExternalModerationClient client = new HttpExternalModerationClient(
                 new OkHttpClient.Builder().callTimeout(Duration.ofSeconds(1)).build(),
                 new ObjectMapper(), properties, guard);

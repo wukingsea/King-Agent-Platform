@@ -88,7 +88,10 @@ public class McpClientFactory {
     }
 
     private McpClient build(Prepared prepared) {
-        return new McpClient(httpClient.newBuilder().callTimeout(CALL_TIMEOUT).build(),
+        return new McpClient(httpClient.newBuilder()
+                .callTimeout(CALL_TIMEOUT)
+                .dns(outboundUrlGuard.dns())
+                .build(),
                 objectMapper, prepared.url(), prepared.headers());
     }
 

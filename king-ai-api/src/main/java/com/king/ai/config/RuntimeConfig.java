@@ -49,6 +49,9 @@ public class RuntimeConfig {
                 .writeTimeout(Duration.ofSeconds(30))
                 .connectionPool(new ConnectionPool(32, 5, TimeUnit.MINUTES))
                 .retryOnConnectionFailure(false)
+                // 租户可配置的出站地址不允许用 3xx 跳出已校验的目标。
+                .followRedirects(false)
+                .followSslRedirects(false)
                 .build();
     }
 }

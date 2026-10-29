@@ -35,6 +35,7 @@ public class HttpExternalModerationClient implements ExternalModerationClient {
         this.httpClient = httpClient.newBuilder()
                 .callTimeout(Duration.ofMillis(Math.max(500,
                         properties.getCompliance().getModeration().getExternalTimeoutMs())))
+                .dns(outboundUrlGuard.dns())
                 .build();
         this.objectMapper = objectMapper;
         this.properties = properties;

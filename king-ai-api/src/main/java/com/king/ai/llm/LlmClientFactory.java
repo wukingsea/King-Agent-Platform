@@ -38,7 +38,8 @@ public class LlmClientFactory {
             throw new LlmException(violation);
         }
         String apiKey = cryptoService.decrypt(supplier.getApiKey());
-        return new OpenAiClient(httpClient, objectMapper, supplier.getBaseUrl(), apiKey,
+        OkHttpClient guarded = httpClient.newBuilder().dns(outboundUrlGuard.dns()).build();
+        return new OpenAiClient(guarded, objectMapper, supplier.getBaseUrl(), apiKey,
                 parseHeaders(cryptoService.decrypt(supplier.getHeaders())), properties.getChat().getLlmTimeoutSeconds());
     }
 
