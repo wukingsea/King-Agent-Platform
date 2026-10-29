@@ -68,8 +68,10 @@ public class PublicChatController {
                            HttpServletResponse httpResponse) {
         String visitor = visitorTokenService.requireVisitor(httpRequest, httpResponse);
         AgentRuntime agent = agentService.publishedRuntime(request.publicId());
-        rateLimiter.check(visitor + "|" + clientIpResolver.resolve(httpRequest),
-                properties.getPublicChat().getRateLimitPerMinute());
+        int limit = properties.getPublicChat().getRateLimitPerMinute();
+        // 访客 cookie 可被清空后重新签发，必须同时按 IP 记账，否则限流可被无限绕过。
+        rateLimiter.check("ip|" + clientIpResolver.resolve(httpRequest), limit);
+        rateLimiter.check("visitor|" + visitor, limit);
         return chatRuntime.start(ChatActor.visitor(visitor, agent.spaceId()), agent,
                 request.sessionId(), request.message(), ChatService.SOURCE_PUBLIC);
     }

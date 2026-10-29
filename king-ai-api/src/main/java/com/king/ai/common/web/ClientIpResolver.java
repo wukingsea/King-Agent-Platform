@@ -16,14 +16,14 @@ public class ClientIpResolver {
         if (properties.getSecurity().isTrustForwardedHeaders()) {
             String forwarded = request.getHeader("X-Forwarded-For");
             if (!Texts.isBlank(forwarded)) {
-                String first = forwarded.split(",")[0].trim();
-                if (isValidIp(first)) {
-                    return first;
+                String[] hops = forwarded.split(",");
+                int trustedHops = Math.max(1, properties.getSecurity().getTrustedProxyHops());
+                if (hops.length >= trustedHops) {
+                    String candidate = hops[hops.length - trustedHops].trim();
+                    if (isValidIp(candidate)) {
+                        return candidate;
+                    }
                 }
-            }
-            String realIp = request.getHeader("X-Real-IP");
-            if (!Texts.isBlank(realIp) && isValidIp(realIp.trim())) {
-                return realIp.trim();
             }
         }
         String remote = request.getRemoteAddr();

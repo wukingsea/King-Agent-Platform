@@ -90,6 +90,11 @@ public class KingAiProperties {
     @Data
     public static class Security {
         private boolean trustForwardedHeaders = false;
+        /**
+         * Number of trusted reverse proxies in front of the app. The client IP is read from the
+         * right-hand side of X-Forwarded-For, so client-supplied entries on the left cannot spoof it.
+         */
+        private int trustedProxyHops = 1;
         private boolean cookieSecure = false;
         private String sessionCookieName = "king_session";
         private List<String> allowedOrigins = new ArrayList<>();

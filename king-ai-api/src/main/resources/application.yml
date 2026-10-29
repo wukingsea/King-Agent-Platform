@@ -110,6 +110,7 @@ king-ai:
     allowed-hosts: ${KING_AI_ALLOWED_OUTBOUND_HOSTS:}
   security:
     trust-forwarded-headers: ${KING_AI_TRUST_FORWARDED_HEADERS:false}
+    trusted-proxy-hops: ${KING_AI_TRUSTED_PROXY_HOPS:1}
     cookie-secure: ${KING_AI_COOKIE_SECURE:false}
     session-cookie-name: ${KING_AI_SESSION_COOKIE_NAME:king_session}
     allowed-origins: ${KING_AI_ALLOWED_ORIGINS:}

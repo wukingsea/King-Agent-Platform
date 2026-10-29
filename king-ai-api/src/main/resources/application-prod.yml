@@ -43,6 +43,7 @@ king-ai:
     allowed-hosts: ${KING_AI_ALLOWED_OUTBOUND_HOSTS:}
   security:
     trust-forwarded-headers: ${KING_AI_TRUST_FORWARDED_HEADERS:true}
+    trusted-proxy-hops: ${KING_AI_TRUSTED_PROXY_HOPS:1}
     cookie-secure: ${KING_AI_COOKIE_SECURE:true}
     allowed-origins: ${KING_AI_ALLOWED_ORIGINS:}
   admin:
