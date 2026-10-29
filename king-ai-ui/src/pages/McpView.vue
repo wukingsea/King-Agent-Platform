@@ -198,7 +198,7 @@ onMounted(loadServers)
       eyebrow="Tools"
     >
       <template #actions>
-        <el-button v-if="auth.isAdmin" type="primary" @click="openCreate">
+        <el-button v-if="auth.canManageSpace" type="primary" @click="openCreate">
           <el-icon><Plus /></el-icon>
           接入 MCP 服务
         </el-button>
@@ -267,7 +267,7 @@ onMounted(loadServers)
               <el-icon><Refresh /></el-icon>
               测试连接
             </el-button>
-            <template v-if="auth.isAdmin">
+            <template v-if="auth.canManageSpace">
               <el-button size="small" text @click="openEdit(server)">
                 <el-icon><EditPen /></el-icon>
                 编辑
@@ -286,7 +286,7 @@ onMounted(loadServers)
         title="还没有接入 MCP 服务"
         description="接入一个 Streamable HTTP MCP 服务，让智能体可以查询时间、检索业务系统或调用自定义工具。"
       >
-        <el-button v-if="auth.isAdmin" type="primary" @click="openCreate">
+        <el-button v-if="auth.canManageSpace" type="primary" @click="openCreate">
           <el-icon><Plus /></el-icon>
           接入第一个服务
         </el-button>

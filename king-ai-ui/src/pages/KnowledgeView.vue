@@ -542,7 +542,7 @@ function sourceLabel(sourceType: string): string {
 
 onMounted(async () => {
   await Promise.all([loadBases(), loadModels()])
-  if (route.query.create === '1' && auth.isAdmin) {
+  if (route.query.create === '1' && auth.canEditSpace) {
     openCreateBase()
   }
   if (route.query.id) {
@@ -564,7 +564,7 @@ onBeforeUnmount(stopPolling)
       eyebrow="Knowledge"
     >
       <template #actions>
-        <el-button v-if="auth.isAdmin" type="primary" @click="openCreateBase">
+        <el-button v-if="auth.canEditSpace" type="primary" @click="openCreateBase">
           <el-icon><Plus /></el-icon>
           新建知识库
         </el-button>
@@ -642,7 +642,7 @@ onBeforeUnmount(stopPolling)
                 <p>{{ selectedBase.description || '未填写描述' }}</p>
               </div>
             </div>
-            <div v-if="auth.isAdmin" class="kb-head-actions">
+            <div v-if="auth.canEditSpace" class="kb-head-actions">
               <el-button size="small" @click="openEditBase">
                 <el-icon><EditPen /></el-icon>
                 编辑
@@ -695,7 +695,7 @@ onBeforeUnmount(stopPolling)
                   <el-icon><Refresh /></el-icon>
                 </el-button>
                 <div class="toolbar-spacer"></div>
-                <template v-if="auth.isAdmin">
+                <template v-if="auth.canEditSpace">
                   <el-upload
                     :show-file-list="false"
                     accept=".txt,.md,.markdown,.pdf"
@@ -756,7 +756,7 @@ onBeforeUnmount(stopPolling)
                       <el-icon><View /></el-icon>
                       切片
                     </el-button>
-                    <template v-if="auth.isAdmin">
+                    <template v-if="auth.canEditSpace">
                       <el-button link size="small" @click="openAcl(row)">
                         权限
                       </el-button>
@@ -849,7 +849,7 @@ onBeforeUnmount(stopPolling)
           >
             <template #icon><el-icon :size="22"><Collection /></el-icon></template>
             <template #action>
-              <el-button v-if="auth.isAdmin" type="primary" size="small" @click="openCreateBase">
+              <el-button v-if="auth.canEditSpace" type="primary" size="small" @click="openCreateBase">
                 <el-icon><Plus /></el-icon>
                 新建知识库
               </el-button>

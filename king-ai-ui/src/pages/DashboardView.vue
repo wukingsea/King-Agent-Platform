@@ -155,7 +155,7 @@ onMounted(load)
             <el-icon><ChatDotRound /></el-icon>
             开始对话测试
           </el-button>
-          <el-button size="large" @click="router.push({ name: 'agents', query: { create: '1' } })">
+          <el-button v-if="auth.canEditSpace" size="large" @click="router.push({ name: 'agents', query: { create: '1' } })">
             <el-icon><Plus /></el-icon>
             新建智能体
           </el-button>

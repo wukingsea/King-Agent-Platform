@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import type { SpaceRole } from '@/api/types'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -77,7 +78,25 @@ const routes: RouteRecordRaw[] = [
         path: 'spaces',
         name: 'spaces',
         component: () => import('@/pages/SpacesView.vue'),
-        meta: { title: '业务空间' },
+        meta: { title: '业务空间', admin: true },
+      },
+      {
+        path: 'compliance',
+        name: 'compliance',
+        component: () => import('@/pages/ComplianceView.vue'),
+        meta: {
+          title: '合规中心',
+          spaceRoles: ['OWNER', 'ADMIN', 'AUDITOR'],
+        },
+      },
+      {
+        path: 'audit-logs',
+        name: 'audit-logs',
+        component: () => import('@/pages/AuditLogView.vue'),
+        meta: {
+          title: '审计日志',
+          spaceRoles: ['OWNER', 'ADMIN', 'AUDITOR'],
+        },
       },
     ],
   },
@@ -132,6 +151,11 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.admin && !auth.isAdmin) {
+    return { name: 'dashboard' }
+  }
+
+  const spaceRoles = to.meta.spaceRoles as SpaceRole[] | undefined
+  if (spaceRoles && !auth.hasSpaceRole(spaceRoles)) {
     return { name: 'dashboard' }
   }
 

@@ -416,7 +416,7 @@ onMounted(loadAll)
       eyebrow="Models"
     >
       <template #actions>
-        <el-button v-if="auth.isAdmin" type="primary" @click="activeTab === 'suppliers' ? openCreateSupplier() : openCreateModel()">
+        <el-button v-if="auth.canManageSpace" type="primary" @click="activeTab === 'suppliers' ? openCreateSupplier() : openCreateModel()">
           <el-icon><Plus /></el-icon>
           {{ activeTab === 'suppliers' ? '新增供应商' : '添加模型' }}
         </el-button>
@@ -526,11 +526,11 @@ onMounted(loadAll)
                   <el-icon><Refresh /></el-icon>
                   测试
                 </el-button>
-                <el-button v-if="auth.isAdmin" size="small" @click="openCreateModel(supplier)">
+                <el-button v-if="auth.canManageSpace" size="small" @click="openCreateModel(supplier)">
                   <el-icon><Plus /></el-icon>
                   模型
                 </el-button>
-                <el-dropdown v-if="auth.isAdmin" trigger="click">
+                <el-dropdown v-if="auth.canManageSpace" trigger="click">
                   <el-button size="small" circle text>
                     <el-icon><EditPen /></el-icon>
                   </el-button>
@@ -558,7 +558,7 @@ onMounted(loadAll)
           title="还没有接入供应商"
           description="接入 OpenAI 兼容服务或使用本地模拟供应商，然后导入模型供智能体使用。"
         >
-          <el-button v-if="auth.isAdmin" type="primary" @click="openCreateSupplier">
+          <el-button v-if="auth.canManageSpace" type="primary" @click="openCreateSupplier">
             <el-icon><Plus /></el-icon>
             新增供应商
           </el-button>
@@ -629,7 +629,7 @@ onMounted(loadAll)
           <el-table-column label="创建时间" width="140">
             <template #default="{ row }">{{ fromNow(row.createdAt) }}</template>
           </el-table-column>
-          <el-table-column v-if="auth.isAdmin" label="操作" width="140" fixed="right">
+          <el-table-column v-if="auth.canManageSpace" label="操作" width="140" fixed="right">
             <template #default="{ row }">
               <el-button size="small" text @click="openEditModel(row)">编辑</el-button>
               <el-button size="small" text type="danger" @click="removeModel(row)">删除</el-button>
@@ -641,7 +641,7 @@ onMounted(loadAll)
               title="暂无模型"
               description="先在供应商下导入或手动添加模型，才能创建智能体与知识库。"
             >
-              <el-button v-if="auth.isAdmin" type="primary" @click="openCreateModel()">
+              <el-button v-if="auth.canManageSpace" type="primary" @click="openCreateModel()">
                 添加模型
               </el-button>
             </EmptyState>
@@ -749,7 +749,7 @@ onMounted(loadAll)
       <template #footer>
         <el-button @click="testVisible = false">关闭</el-button>
         <el-button
-          v-if="testResult?.ok && testResult.models.length && testTarget && auth.isAdmin"
+          v-if="testResult?.ok && testResult.models.length && testTarget && auth.canManageSpace"
           type="primary"
           @click="openImport(testTarget, testResult.models)"
         >

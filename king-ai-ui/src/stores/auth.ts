@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { authApi } from '@/api'
 import { SPACE_KEY, getSpaceId } from '@/api/http'
-import type { LoginRequest, SpaceView, UserView } from '@/api/types'
+import type { LoginRequest, SpaceRole, SpaceView, UserView } from '@/api/types'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserView | null>(null)
@@ -20,6 +20,21 @@ export const useAuthStore = defineStore('auth', () => {
   const displayName = computed(
     () => user.value?.nickname || user.value?.username || '未登录',
   )
+  const spaceRole = computed<SpaceRole | null>(() => currentSpace.value?.role ?? null)
+  // Platform admins bypass space roles; OWNER/ADMIN manage the space, AUDITOR observes governance data only.
+  const canManageSpace = computed(
+    () => isAdmin.value || spaceRole.value === 'OWNER' || spaceRole.value === 'ADMIN',
+  )
+  const canAuditSpace = computed(
+    () => canManageSpace.value || spaceRole.value === 'AUDITOR',
+  )
+  const canEditSpace = computed(
+    () => canManageSpace.value || spaceRole.value === 'EDITOR',
+  )
+
+  function hasSpaceRole(roles: SpaceRole[]): boolean {
+    return isAdmin.value || (spaceRole.value != null && roles.includes(spaceRole.value))
+  }
 
   function setSpace(spaceId: number | null | undefined) {
     if (!spaceId) return
@@ -116,6 +131,11 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     isAdmin,
     currentSpace,
+    spaceRole,
+    canManageSpace,
+    canAuditSpace,
+    canEditSpace,
+    hasSpaceRole,
     displayName,
     login,
     fetchMe,

@@ -1,15 +1,28 @@
 import { request } from './http'
+import { saveBlob } from '@/utils/download'
 import type {
+  AccessReviewDecisionRequest,
+  AccessReviewItemView,
+  AccessReviewView,
   AgentOption,
   AgentSaveRequest,
   AgentVersionView,
   AgentView,
+  AuditLogView,
   AuthResponse,
   ChangePasswordRequest,
   ChatMessageView,
   ChatSessionView,
   ChatStopResult,
+  ComplianceSettingUpdate,
+  ComplianceSettingView,
+  ExportCreateRequest,
+  ExportJobView,
   HealthStatus,
+  LegalHoldCreate,
+  LegalHoldView,
+  RetentionPolicyUpdate,
+  RetentionPolicyView,
   KnowledgeBaseSaveRequest,
   KnowledgeBaseView,
   KnowledgeChunkView,
@@ -343,6 +356,87 @@ export const publicChatApi = {
       method: 'post',
       data: { approved },
     }),
+}
+
+export const complianceApi = {
+  settings: () =>
+    request<ComplianceSettingView>({ url: '/compliance-settings', method: 'get' }),
+  updateSettings: (data: ComplianceSettingUpdate) =>
+    request<ComplianceSettingView>({
+      url: '/compliance-settings',
+      method: 'put',
+      data,
+    }),
+  retentionPolicies: () =>
+    request<RetentionPolicyView[]>({
+      url: '/compliance/retention-policies',
+      method: 'get',
+    }),
+  upsertRetentionPolicy: (data: RetentionPolicyUpdate) =>
+    request<RetentionPolicyView>({
+      url: '/compliance/retention-policies',
+      method: 'put',
+      data,
+    }),
+  legalHolds: () =>
+    request<LegalHoldView[]>({ url: '/compliance/legal-holds', method: 'get' }),
+  createLegalHold: (data: LegalHoldCreate) =>
+    request<LegalHoldView>({ url: '/compliance/legal-holds', method: 'post', data }),
+  releaseLegalHold: (id: number) =>
+    request<void>({ url: `/compliance/legal-holds/${id}`, method: 'delete' }),
+  exports: (params: { page?: number; size?: number } = {}) =>
+    request<PageResult<ExportJobView>>({
+      url: '/compliance/exports',
+      method: 'get',
+      params,
+    }),
+  createExport: (data: ExportCreateRequest) =>
+    request<ExportJobView>({ url: '/compliance/exports', method: 'post', data }),
+  downloadExport: async (job: ExportJobView) => {
+    const blob = await request<Blob>({
+      url: `/compliance/exports/${job.id}/download`,
+      method: 'get',
+      responseType: 'blob',
+      timeout: 300_000,
+    })
+    saveBlob(blob, job.fileName || `export-${job.id}.${job.format.toLowerCase()}`)
+  },
+  accessReviews: () =>
+    request<AccessReviewView[]>({ url: '/compliance/access-reviews', method: 'get' }),
+  accessReview: (id: number) =>
+    request<AccessReviewView>({
+      url: `/compliance/access-reviews/${id}`,
+      method: 'get',
+    }),
+  generateAccessReview: () =>
+    request<AccessReviewView>({ url: '/compliance/access-reviews', method: 'post' }),
+  decideAccessReview: (id: number, itemId: number, data: AccessReviewDecisionRequest) =>
+    request<AccessReviewItemView>({
+      url: `/compliance/access-reviews/${id}/items/${itemId}/decision`,
+      method: 'post',
+      data,
+    }),
+  downloadAccessReviewCsv: async (id: number) => {
+    const blob = await request<Blob>({
+      url: `/compliance/access-reviews/${id}/export.csv`,
+      method: 'get',
+      responseType: 'blob',
+    })
+    saveBlob(blob, `access-review-${id}.csv`)
+  },
+}
+
+export const auditApi = {
+  page: (params: {
+    spaceId?: number
+    actorId?: number
+    action?: string
+    status?: string
+    from?: string
+    to?: string
+    page?: number
+    size?: number
+  }) => request<PageResult<AuditLogView>>({ url: '/audit-logs', method: 'get', params }),
 }
 
 export const systemApi = {

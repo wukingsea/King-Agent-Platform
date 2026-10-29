@@ -458,7 +458,7 @@ onMounted(async () => {
       eyebrow="Skills"
     >
       <template #actions>
-        <el-button v-if="auth.isAdmin" type="primary" @click="openCreateSkill">
+        <el-button v-if="auth.canEditSpace" type="primary" @click="openCreateSkill">
           <el-icon><Plus /></el-icon>
           新建技能
         </el-button>
@@ -541,7 +541,7 @@ onMounted(async () => {
               <span>{{ directoryCount }} 个目录</span>
               <span>{{ fromNow(selectedSkill.createdAt) }}创建</span>
             </div>
-            <div v-if="auth.isAdmin" class="head-actions">
+            <div v-if="auth.canEditSpace" class="head-actions">
               <el-button size="small" @click="openEditSkill">
                 <el-icon><EditPen /></el-icon>
                 编辑信息
@@ -560,7 +560,7 @@ onMounted(async () => {
                   <el-icon><Files /></el-icon>
                   文件
                 </span>
-                <div v-if="auth.isAdmin" class="pane-actions">
+                <div v-if="auth.canEditSpace" class="pane-actions">
                   <el-tooltip content="新建文件" placement="top">
                     <el-button size="small" circle text @click="openCreateFile(1)">
                       <el-icon><Document /></el-icon>
@@ -590,7 +590,7 @@ onMounted(async () => {
                     <span class="tree-name">{{ node.name }}</span>
                     <span v-if="node.locked === 1" class="lock-tag">内置</span>
                   </button>
-                  <div v-if="auth.isAdmin" class="tree-tools">
+                  <div v-if="auth.canEditSpace" class="tree-tools">
                     <el-dropdown trigger="click" @command="(cmd: string) => {
                       if (cmd === 'rename') openRename(node)
                       if (cmd === 'delete') removeFile(node)
@@ -622,7 +622,7 @@ onMounted(async () => {
                 <div v-if="!flatTree.length" class="tree-empty">暂无文件</div>
               </div>
 
-              <div v-if="auth.isAdmin" class="pane-foot">
+              <div v-if="auth.canEditSpace" class="pane-foot">
                 <el-button size="small" text @click="openCreateFile(1)">
                   <el-icon><Plus /></el-icon>
                   新文件
@@ -643,23 +643,23 @@ onMounted(async () => {
                     <span v-else-if="selectedFile.locked === 1" class="hint">内置技能说明</span>
                   </div>
                   <div class="editor-actions">
-                    <el-button size="small" @click="openRename(selectedFile)" :disabled="selectedFile.locked === 1 && !auth.isAdmin">
+                    <el-button size="small" @click="openRename(selectedFile)" :disabled="selectedFile.locked === 1 && !auth.canEditSpace">
                       重命名
                     </el-button>
-                    <el-button v-if="auth.isAdmin" type="primary" size="small" :loading="savingFile" :disabled="!isDirty" @click="saveFile">
+                    <el-button v-if="auth.canEditSpace" type="primary" size="small" :loading="savingFile" :disabled="!isDirty" @click="saveFile">
                       保存
                     </el-button>
                   </div>
                 </div>
-                <div v-if="!auth.isAdmin" class="readonly-banner">
+                <div v-if="!auth.canEditSpace" class="readonly-banner">
                   <el-icon><Lock /></el-icon>
-                  只读模式：仅管理员可以编辑技能文件。
+                  只读模式：需要当前空间的编辑权限才能修改技能文件。
                 </div>
                 <el-input
                   v-model="editorContent"
                   type="textarea"
                   class="code-editor"
-                  :readonly="!auth.isAdmin"
+                  :readonly="!auth.canEditSpace"
                   placeholder="在这里编写技能说明（Markdown）"
                   spellcheck="false"
                 />
@@ -689,7 +689,7 @@ onMounted(async () => {
           title="选择或创建一个技能"
           description="技能由 SKILL.md 与参考文件组成，绑定到智能体后即可指导其工作方式。"
         >
-          <el-button v-if="auth.isAdmin" type="primary" @click="openCreateSkill">
+          <el-button v-if="auth.canEditSpace" type="primary" @click="openCreateSkill">
             <el-icon><Plus /></el-icon>
             新建技能
           </el-button>

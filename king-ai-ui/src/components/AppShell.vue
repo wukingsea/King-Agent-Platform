@@ -9,6 +9,7 @@ import {
   Collection,
   Connection,
   Cpu,
+  DocumentChecked,
   Lock,
   MagicStick,
   Memo,
@@ -16,12 +17,14 @@ import {
   Odometer,
   OfficeBuilding,
   SwitchButton,
+  Tickets,
   User,
 } from '@element-plus/icons-vue'
 import BrandLogo from './BrandLogo.vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi, systemApi } from '@/api'
 import { ApiError } from '@/api/http'
+import type { SpaceRole } from '@/api/types'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -38,6 +41,7 @@ interface NavItem {
   label: string
   icon: Component
   admin?: boolean
+  roles?: SpaceRole[]
 }
 
 interface NavGroup {
@@ -68,6 +72,23 @@ const navGroups = computed<NavGroup[]>(() => [
     items: [{ name: 'models', label: '供应商与模型', icon: Box }],
   },
   {
+    label: '治理',
+    items: [
+      {
+        name: 'compliance',
+        label: '合规中心',
+        icon: DocumentChecked,
+        roles: ['OWNER', 'ADMIN', 'AUDITOR'],
+      },
+      {
+        name: 'audit-logs',
+        label: '审计日志',
+        icon: Tickets,
+        roles: ['OWNER', 'ADMIN', 'AUDITOR'],
+      },
+    ],
+  },
+  {
     label: '系统',
     items: [
       { name: 'users', label: '用户管理', icon: User, admin: true },
@@ -80,7 +101,11 @@ const visibleGroups = computed(() =>
   navGroups.value
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.admin || auth.isAdmin),
+      items: group.items.filter(
+        (item) =>
+          (!item.admin || auth.isAdmin) &&
+          (!item.roles || auth.hasSpaceRole(item.roles)),
+      ),
     }))
     .filter((group) => group.items.length > 0),
 )

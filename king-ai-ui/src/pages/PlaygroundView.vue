@@ -79,7 +79,7 @@ onMounted(load)
         <template v-if="auth.isAdmin && selectedAgent?.publicId && selectedAgent.publishStatus === 1">
           <el-button @click="copyPublicLink">复制公开链接</el-button>
         </template>
-        <el-button v-if="selectedAgent" @click="editAgent">
+        <el-button v-if="selectedAgent && auth.canEditSpace" @click="editAgent">
           <el-icon><EditPen /></el-icon>
           编辑智能体
         </el-button>
@@ -124,7 +124,7 @@ onMounted(load)
           <template #icon><el-icon :size="22"><ChatDotRound /></el-icon></template>
           <template #action>
             <el-button
-              v-if="auth.isAdmin"
+              v-if="auth.canEditSpace"
               type="primary"
               @click="router.push({ name: 'agents', query: { create: '1' } })"
             >

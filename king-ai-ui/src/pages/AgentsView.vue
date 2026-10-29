@@ -372,7 +372,7 @@ function palette(id: number): string {
 
 onMounted(async () => {
   await Promise.all([loadAgents(), loadOptions(), loadStats()])
-  if (!auth.isAdmin) return
+  if (!auth.canEditSpace) return
   if (route.query.create === '1') {
     openCreate()
     return
@@ -393,7 +393,7 @@ onMounted(async () => {
       eyebrow="Agents"
     >
       <template #actions>
-        <el-button v-if="auth.isAdmin" type="primary" @click="openCreate">
+        <el-button v-if="auth.canEditSpace" type="primary" @click="openCreate">
           <el-icon><Plus /></el-icon>
           新建智能体
         </el-button>
@@ -489,7 +489,7 @@ onMounted(async () => {
                 <el-icon><ChatDotRound /></el-icon>
                 对话
               </el-button>
-              <template v-if="auth.isAdmin">
+              <template v-if="auth.canEditSpace">
                 <el-button
                   size="small"
                   :disabled="agent.status !== 0 && agent.publishStatus !== 1"
@@ -519,7 +519,7 @@ onMounted(async () => {
                         <el-icon><ChatDotRound /></el-icon>
                         打开公开对话
                       </el-dropdown-item>
-                      <el-dropdown-item command="delete" divided>
+                      <el-dropdown-item command="delete" divided :disabled="!auth.canManageSpace">
                         <el-icon><Delete /></el-icon>
                         删除智能体
                       </el-dropdown-item>
@@ -539,7 +539,7 @@ onMounted(async () => {
         >
           <template #icon><el-icon :size="22"><Cpu /></el-icon></template>
           <template #action>
-            <el-button v-if="auth.isAdmin" type="primary" @click="openCreate">
+            <el-button v-if="auth.canEditSpace" type="primary" @click="openCreate">
               <el-icon><Plus /></el-icon>
               新建智能体
             </el-button>
