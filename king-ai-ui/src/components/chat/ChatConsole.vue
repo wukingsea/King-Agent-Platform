@@ -377,6 +377,14 @@ async function send() {
           assistant.retrying = true
         },
         onDegraded(info) {
+          if (info.reset) {
+            assistant.content = typeof info.contentLength === 'number'
+              ? (assistant.content || '').slice(0, info.contentLength)
+              : ''
+            assistant.reasoning = typeof info.reasoningLength === 'number'
+              ? (assistant.reasoning || '').slice(0, info.reasoningLength)
+              : ''
+          }
           assistant.notice = info.message || '主模型不可用，已切换至备用模型'
         },
         onUsage(usage) {

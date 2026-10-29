@@ -464,8 +464,12 @@ export interface ChatRetryEvent {
 }
 
 export interface ChatDegradedEvent {
+  reason?: string
   message?: string
   model?: string
+  reset?: boolean
+  contentLength?: number
+  reasoningLength?: number
 }
 
 export interface ToolCallEvent {
@@ -545,4 +549,141 @@ export interface HealthStatus {
 
 export interface PublicMeta {
   demoEnabled: boolean
+}
+
+export type RetentionType = 'SESSION' | 'MESSAGE' | 'AUDIT' | 'EXPORT'
+
+export interface RetentionPolicyView {
+  id: number
+  resourceType: RetentionType
+  retentionDays: number
+  enabled: boolean
+  archiveBeforeDelete: boolean
+}
+
+export interface RetentionPolicyUpdate {
+  resourceType: RetentionType
+  retentionDays: number
+  enabled: boolean
+  archiveBeforeDelete: boolean
+}
+
+export interface LegalHoldView {
+  id: number
+  resourceType: RetentionType
+  resourceId: number
+  reason: string
+  until?: string | null
+  releasedAt?: string | null
+  createdAt: string
+}
+
+export interface LegalHoldCreate {
+  resourceType: RetentionType
+  resourceId: number
+  reason: string
+  until?: string | null
+}
+
+export type ExportType = 'CONVERSATIONS' | 'AUDIT' | 'MEMBERS'
+export type ExportFormat = 'JSONL' | 'CSV'
+export type ExportStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'EXPIRED'
+
+export interface ExportJobView {
+  id: number
+  exportType: ExportType
+  format: ExportFormat
+  status: ExportStatus
+  fileName?: string | null
+  rowCount: number
+  errorMessage?: string | null
+  requestedBy?: number | null
+  fromAt?: string | null
+  toAt?: string | null
+  expiresAt?: string | null
+  createdAt: string
+  completedAt?: string | null
+}
+
+export interface ExportCreateRequest {
+  type: ExportType
+  format: ExportFormat
+  from?: string | null
+  to?: string | null
+}
+
+export type ModerationMode = 'OFF' | 'LOCAL' | 'EXTERNAL' | 'HYBRID'
+export type ModerationAction = 'BLOCK' | 'WARN'
+
+export interface ComplianceSettingView {
+  piiEnabled: boolean
+  moderationMode: ModerationMode
+  inputAction: ModerationAction
+  outputAction: ModerationAction
+  blocklist: string[]
+  customPiiPatterns: string[]
+}
+
+export interface ComplianceSettingUpdate {
+  piiEnabled: boolean
+  moderationMode: ModerationMode
+  inputAction: ModerationAction
+  outputAction: ModerationAction
+  blocklist: string
+  customPiiPatterns: string
+}
+
+export type AccessReviewStatus = 'OPEN' | 'COMPLETED' | 'SUPERSEDED'
+export type AccessReviewDecision =
+  | 'PENDING'
+  | 'CONFIRM'
+  | 'ACKNOWLEDGE'
+  | 'DOWNGRADE'
+  | 'REMOVE'
+
+export interface AccessReviewItemView {
+  id: number
+  subjectType: string
+  subjectId: number
+  subjectName: string
+  role: string
+  lastActivityAt?: string | null
+  flags: string[]
+  decision: AccessReviewDecision
+  decidedBy?: number | null
+  decidedAt?: string | null
+  note?: string | null
+}
+
+export interface AccessReviewView {
+  id: number
+  spaceId: number
+  status: AccessReviewStatus
+  summary?: string | null
+  generatedBy?: number | null
+  generatedAt: string
+  completedAt?: string | null
+  items: AccessReviewItemView[]
+}
+
+export interface AccessReviewDecisionRequest {
+  decision: Exclude<AccessReviewDecision, 'PENDING'>
+  note?: string
+}
+
+export interface AuditLogView {
+  id: number
+  spaceId?: number | null
+  actorType: string
+  actorId?: number | null
+  actorName?: string | null
+  action: string
+  resourceType?: string | null
+  resourceId?: string | null
+  status: string
+  detail?: string | null
+  ip?: string | null
+  userAgent?: string | null
+  requestId?: string | null
+  createdAt: string
 }

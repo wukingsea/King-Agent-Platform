@@ -90,6 +90,9 @@ public class ChatRuntime {
     private static final Set<String> MODERATION_CATEGORIES = Set.of(
             "BLOCKLIST", "SPAM", "FLOOD", "MODERATION_UNAVAILABLE", "EXTERNAL");
 
+    private record StreamOutcome(LlmResult result, String model) {
+    }
+
     private final ChatService chatService;
     private final ModelRuntimeService modelRuntimeService;
     private final KnowledgeService knowledgeService;
@@ -267,6 +270,7 @@ public class ChatRuntime {
         long[] lastFlush = {startedAt};
         String status = ChatService.STATUS_COMPLETED;
         String errorMessage = null;
+        String usedModel = resolved.model().getModel();
         int promptTokens = 0;
         int completionTokens = 0;
         boolean truncated = false;
@@ -327,9 +331,11 @@ public class ChatRuntime {
             for (int round = 0; round <= maxRounds; round++) {
                 token.throwIfCancelled();
                 boolean allowTools = round < maxRounds && !boundTools.isEmpty();
-                LlmResult result = streamChatWithRetry(resolved, messages, allowTools, toolDefinitions,
+                StreamOutcome streamOutcome = streamChatWithRetry(resolved, messages, allowTools, toolDefinitions,
                         agent, emitter, progressMessage, content, reasoning, trace, citations, lastFlush, token,
                         contentGuard, reasoningGuard, sourceTag(sourceType));
+                LlmResult result = streamOutcome.result();
+                usedModel = streamOutcome.model();
                 promptTokens += result.promptTokens();
                 completionTokens += result.completionTokens();
                 if ("length".equalsIgnoreCase(result.finishReason())) {
@@ -489,7 +495,7 @@ public class ChatRuntime {
                     try {
                         chatService.finishAssistant(assistant.getId(), content.toString(), reasoning.toString(),
                                 toolTraceJson(trace), citationsJson(citations), status,
-                                resolved.model().getModel(), promptTokens, completionTokens, duration);
+                                usedModel, promptTokens, completionTokens, duration);
                     } catch (RuntimeException ex) {
                         tracing.error(persistSpan, ex);
                         log.error("Failed to persist assistant message {}", assistant.getId(), ex);
@@ -549,19 +555,22 @@ public class ChatRuntime {
         return Texts.isBlank(sourceType) ? "unknown" : sourceType.trim().toLowerCase(Locale.ROOT);
     }
 
-    private LlmResult streamChatWithRetry(ModelRuntimeService.ResolvedModel resolved, List<LlmMessage> messages,
-                                          boolean allowTools, List<ToolDefinition> toolDefinitions,
-                                          AgentRuntime agent, SseEmitter emitter, ChatMessage progressMessage,
-                                          StringBuilder content, StringBuilder reasoning,
-                                          List<Map<String, Object>> trace,
-                                          List<Map<String, Object>> citations, long[] lastFlush,
-                                          CancellationToken token,
-                                          ComplianceStreamGuard contentGuard,
-                                          ComplianceStreamGuard reasoningGuard, String source) {
+    private StreamOutcome streamChatWithRetry(ModelRuntimeService.ResolvedModel resolved, List<LlmMessage> messages,
+                                              boolean allowTools, List<ToolDefinition> toolDefinitions,
+                                              AgentRuntime agent, SseEmitter emitter, ChatMessage progressMessage,
+                                              StringBuilder content, StringBuilder reasoning,
+                                              List<Map<String, Object>> trace,
+                                              List<Map<String, Object>> citations, long[] lastFlush,
+                                              CancellationToken token,
+                                              ComplianceStreamGuard contentGuard,
+                                              ComplianceStreamGuard reasoningGuard, String source) {
+        ChatStreamCheckpoint checkpoint = ChatStreamCheckpoint.capture(
+                content, reasoning, contentGuard, reasoningGuard);
         try {
-            return streamWithRetry(resolved, messages, allowTools, toolDefinitions, agent, emitter,
+            LlmResult result = streamWithRetry(resolved, messages, allowTools, toolDefinitions, agent, emitter,
                     progressMessage, content, reasoning, trace, citations, lastFlush, token,
                     contentGuard, reasoningGuard, source);
+            return new StreamOutcome(result, resolved.model().getModel());
         } catch (LlmException ex) {
             if (agent.fallbackModelId() != null && !Objects.equals(agent.fallbackModelId(), agent.modelId())) {
                 try {
@@ -569,12 +578,19 @@ public class ChatRuntime {
                             modelRuntimeService.resolveChat(agent.spaceId(), agent.fallbackModelId());
                     log.warn("Primary model {} failed, switching to fallback {}: {}",
                             resolved.model().getModel(), fallback.model().getModel(), ex.getMessage());
+                    // 降级模型会从头重放同一轮，必须先丢弃主模型的半截输出，否则前端与落库内容重复。
+                    checkpoint.restore(content, reasoning, contentGuard, reasoningGuard);
                     sendQuietly(emitter, "degraded", Map.of(
+                            "reason", "model_fallback",
                             "message", "主模型暂时不可用，已切换至降级模型",
-                            "model", fallback.model().getModel()));
-                    return streamWithRetry(fallback, messages, allowTools, toolDefinitions, agent, emitter,
-                            progressMessage, content, reasoning, trace, citations, lastFlush, token,
+                            "model", fallback.model().getModel(),
+                            "reset", true,
+                            "contentLength", content.length(),
+                            "reasoningLength", reasoning.length()));
+                    LlmResult result = streamWithRetry(fallback, messages, allowTools, toolDefinitions, agent,
+                            emitter, progressMessage, content, reasoning, trace, citations, lastFlush, token,
                             contentGuard, reasoningGuard, source);
+                    return new StreamOutcome(result, fallback.model().getModel());
                 } catch (ContentModerationException moderationEx) {
                     // 审核拦截必须冒泡到 run() 的专用分支，不能当作模型故障降级或重试。
                     throw moderationEx;
