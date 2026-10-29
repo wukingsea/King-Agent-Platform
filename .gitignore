@@ -9,6 +9,9 @@
 **/*.tsbuildinfo
 
 king-ai-api/data/
+**/.tmp-upgrade/
+*.mv.db
+*.trace.db
 *.log
 *.sse
 
