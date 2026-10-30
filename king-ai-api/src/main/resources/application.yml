@@ -196,7 +196,7 @@ management:
         liveness:
           include: livenessState
         readiness:
-          include: readinessState,db,stateStore
+          include: readinessState,db,stateStore,vectorStore
   health:
     redis:
       enabled: false

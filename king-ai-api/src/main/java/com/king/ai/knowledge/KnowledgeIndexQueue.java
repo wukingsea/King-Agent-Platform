@@ -115,6 +115,17 @@ public class KnowledgeIndexQueue {
         }
     }
 
+    /**
+     * Dead-letter view: jobs that exhausted their retries and wait for an operator decision.
+     * Failed jobs are never retried automatically, so they must stay queryable.
+     */
+    public List<KnowledgeIndexJob> failed(int limit) {
+        return mapper.selectList(new LambdaQueryWrapper<KnowledgeIndexJob>()
+                .eq(KnowledgeIndexJob::getStatus, STATUS_FAILED)
+                .orderByDesc(KnowledgeIndexJob::getUpdatedAt)
+                .last("LIMIT " + Math.max(1, limit)));
+    }
+
     public List<KnowledgeIndexJob> due(int limit) {
         return mapper.selectList(new LambdaQueryWrapper<KnowledgeIndexJob>()
                 .eq(KnowledgeIndexJob::getStatus, STATUS_PENDING)

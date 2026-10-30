@@ -8,6 +8,7 @@ import com.king.ai.audit.mapper.AuditLogMapper;
 import com.king.ai.common.PageResult;
 import com.king.ai.common.Texts;
 import com.king.ai.common.security.UserPrincipal;
+import com.king.ai.common.web.ClientIpResolver;
 import com.king.ai.common.web.RequestIdFilter;
 import com.king.ai.config.KingAiProperties;
 import com.king.ai.system.dto.UserView;
@@ -15,7 +16,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.method.HandlerMethod;
 
@@ -38,6 +38,7 @@ public class AuditLogService {
     private final AuditLogMapper auditLogMapper;
     private final KingAiProperties properties;
     private final MeterRegistry meterRegistry;
+    private final ClientIpResolver clientIpResolver;
 
     public void recordRequest(HttpServletRequest request, Object handler, UserPrincipal principal,
                               String status, String detail) {
@@ -96,7 +97,6 @@ public class AuditLogService {
      * 历史全局审计清理。合规保留策略启用后由 {@code RetentionJob} 按空间策略接管，
      * 以便逐空间应用保留天数与法律保留；此处随之停用，避免绕过保留。
      */
-    @Scheduled(cron = "${king-ai.audit.retention-cron:0 30 3 * * *}")
     public void purgeExpired() {
         int retentionDays = properties.getAudit().getRetentionDays();
         if (!properties.getAudit().isEnabled()
@@ -166,7 +166,7 @@ public class AuditLogService {
     private void write(HttpServletRequest request, String action, String resourceType, String resourceId,
                        Long spaceId, String status, Long actorId, String actorName, String detail) {
         persist(spaceId, actorId, actorName, action, resourceType, resourceId, status, detail,
-                request == null ? null : request.getRemoteAddr(),
+                request == null ? null : clientIpResolver.resolve(request),
                 request == null ? null : request.getHeader("User-Agent"),
                 request == null ? null : requestId(request));
     }

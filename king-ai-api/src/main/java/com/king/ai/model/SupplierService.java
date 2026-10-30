@@ -10,6 +10,7 @@ import com.king.ai.common.OptimisticLocks;
 import com.king.ai.common.PageQuery;
 import com.king.ai.common.PageResult;
 import com.king.ai.common.Texts;
+import com.king.ai.common.UpstreamErrors;
 import com.king.ai.common.web.OutboundUrlGuard;
 import com.king.ai.llm.LlmClient;
 import com.king.ai.llm.LlmClientFactory;
@@ -120,8 +121,9 @@ public class SupplierService {
             List<String> models = client.listModels();
             return new SupplierTestResult(true, "连接成功，发现 " + models.size() + " 个可用模型", models);
         } catch (RuntimeException ex) {
+            // Vendor errors can echo API keys; keep the detail in logs, return a stable message.
             log.warn("Supplier connection test failed: supplierId={}, reason={}", id, ex.getMessage());
-            return new SupplierTestResult(false, Texts.blankToDefault(ex.getMessage(), "连接测试失败"), List.of());
+            return new SupplierTestResult(false, UpstreamErrors.CONNECTION_TEST_FAILED, List.of());
         }
     }
 

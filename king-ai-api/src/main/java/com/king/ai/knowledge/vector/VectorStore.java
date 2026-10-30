@@ -22,4 +22,12 @@ public interface VectorStore {
     void deleteCollection(KnowledgeBase base);
 
     List<VectorHit> search(KnowledgeBase base, float[] query, int topK);
+
+    /**
+     * Readiness probe for the backing store. Local (database-backed) implementations do not need
+     * an extra round trip because the database probe already covers them.
+     */
+    default boolean healthy() {
+        return true;
+    }
 }

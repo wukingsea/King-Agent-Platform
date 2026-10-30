@@ -45,6 +45,9 @@ public class MilvusVectorStore implements VectorStore {
     private final String collectionPrefix;
     private final int partitionsNum;
     private final Set<String> readyCollections = ConcurrentHashMap.newKeySet();
+    private static final long HEALTH_CACHE_MILLIS = 5_000L;
+    private volatile long healthCheckedAt;
+    private volatile boolean healthUp;
 
     public MilvusVectorStore(OkHttpClient httpClient, ObjectMapper objectMapper,
                              KingAiProperties properties, KnowledgeMetrics metrics) {
@@ -210,6 +213,25 @@ public class MilvusVectorStore implements VectorStore {
         }
         hits.sort(Comparator.comparingDouble(VectorHit::score).reversed());
         return hits;
+    }
+
+    @Override
+    public boolean healthy() {
+        long now = System.currentTimeMillis();
+        if (now - healthCheckedAt < HEALTH_CACHE_MILLIS) {
+            return healthUp;
+        }
+        boolean up;
+        try {
+            up = isSuccess(post("/v2/vectordb/collections/list",
+                    objectMapper.createObjectNode(), false));
+        } catch (RuntimeException ex) {
+            log.warn("Milvus health probe failed: {}", ex.getMessage());
+            up = false;
+        }
+        healthUp = up;
+        healthCheckedAt = now;
+        return up;
     }
 
     private ObjectNode createBody(String collection, int dimension) {

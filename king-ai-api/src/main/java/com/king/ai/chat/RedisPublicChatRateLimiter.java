@@ -1,6 +1,7 @@
 package com.king.ai.chat;
 
 import com.king.ai.common.BizException;
+import com.king.ai.common.RedisFailurePolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -38,7 +39,8 @@ public class RedisPublicChatRateLimiter implements PublicChatRateLimiter {
         } catch (BizException ex) {
             throw ex;
         } catch (RuntimeException ex) {
-            log.warn("Public chat rate limiter unavailable: {}", ex.getMessage());
+            // Abuse protection must not disappear during a Redis outage.
+            throw RedisFailurePolicy.failClosed("public chat rate limiter", ex);
         }
     }
 }

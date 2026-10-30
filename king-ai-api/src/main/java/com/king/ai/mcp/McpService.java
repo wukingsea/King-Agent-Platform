@@ -8,6 +8,7 @@ import com.king.ai.common.BizException;
 import com.king.ai.common.CryptoService;
 import com.king.ai.common.OptimisticLocks;
 import com.king.ai.common.Texts;
+import com.king.ai.common.UpstreamErrors;
 import com.king.ai.common.web.OutboundUrlGuard;
 import com.king.ai.mcp.dto.McpSaveRequest;
 import com.king.ai.mcp.dto.McpTestResult;
@@ -107,8 +108,9 @@ public class McpService {
                     .toList();
             return new McpTestResult(true, "连接成功，发现 " + views.size() + " 个工具", views);
         } catch (RuntimeException ex) {
+            // Upstream text may contain headers or credentials; only the server log sees it.
             log.warn("MCP connection test failed: id={}, reason={}", id, ex.getMessage());
-            return new McpTestResult(false, Texts.blankToDefault(ex.getMessage(), "连接测试失败"), List.of());
+            return new McpTestResult(false, UpstreamErrors.CONNECTION_TEST_FAILED, List.of());
         }
     }
 

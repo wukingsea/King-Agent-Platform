@@ -1,6 +1,7 @@
 package com.king.ai.chat;
 
 import com.king.ai.common.Ids;
+import com.king.ai.common.RedisFailurePolicy;
 import com.king.ai.llm.CancellationToken;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +35,7 @@ public class RedisChatCancellationRegistry implements ChatCancellationRegistry {
         try {
             redis.opsForValue().set(key(requestId), encode(spaceId, actorKey), METADATA_TTL);
         } catch (RuntimeException ex) {
-            log.warn("Failed to store chat request metadata: {}", ex.getMessage());
+            RedisFailurePolicy.failOpen(log, "chat request metadata write", ex);
         }
         return requestId;
     }
@@ -58,7 +59,7 @@ public class RedisChatCancellationRegistry implements ChatCancellationRegistry {
                 }
             }
         } catch (RuntimeException ex) {
-            log.warn("Failed to read chat request metadata: {}", ex.getMessage());
+            RedisFailurePolicy.failOpen(log, "chat request metadata read", ex);
         }
         if (storedActor == null) {
             return false;
@@ -72,7 +73,7 @@ public class RedisChatCancellationRegistry implements ChatCancellationRegistry {
         try {
             redis.convertAndSend(CANCEL_CHANNEL, requestId);
         } catch (RuntimeException ex) {
-            log.warn("Failed to broadcast chat cancellation: {}", ex.getMessage());
+            RedisFailurePolicy.failOpen(log, "chat cancellation broadcast", ex);
         }
         cancelLocal(requestId);
         return true;
@@ -100,7 +101,7 @@ public class RedisChatCancellationRegistry implements ChatCancellationRegistry {
         try {
             redis.delete(key(requestId));
         } catch (RuntimeException ex) {
-            log.warn("Failed to remove chat request metadata: {}", ex.getMessage());
+            RedisFailurePolicy.failOpen(log, "chat request metadata cleanup", ex);
         }
     }
 

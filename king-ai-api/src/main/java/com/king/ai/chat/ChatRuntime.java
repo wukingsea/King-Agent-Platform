@@ -11,6 +11,7 @@ import com.king.ai.chat.entity.ChatMessage;
 import com.king.ai.chat.entity.ChatSession;
 import com.king.ai.common.BizException;
 import com.king.ai.common.Texts;
+import com.king.ai.common.web.ClientIpResolver;
 import com.king.ai.common.web.RequestIdFilter;
 import com.king.ai.compliance.ChatInputCompliance;
 import com.king.ai.compliance.ComplianceSettings;
@@ -112,6 +113,7 @@ public class ChatRuntime {
     private final ModerationService moderationService;
     private final UsageLedger usageLedger;
     private final ObjectMapper objectMapper;
+    private final ClientIpResolver clientIpResolver;
     private final KingAiProperties properties;
     private final MeterRegistry meterRegistry;
     private final ChatTracing tracing;
@@ -1194,8 +1196,8 @@ public class ChatRuntime {
             return ChatAuditContext.empty();
         }
         HttpServletRequest request = servletAttributes.getRequest();
-        return new ChatAuditContext(request.getRemoteAddr(), request.getHeader("User-Agent"),
-                MDC.get(RequestIdFilter.MDC_KEY));
+        return new ChatAuditContext(clientIpResolver.resolve(request),
+                request.getHeader("User-Agent"), MDC.get(RequestIdFilter.MDC_KEY));
     }
 
     private static String cap(String value, int max) {

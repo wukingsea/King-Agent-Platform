@@ -4,6 +4,7 @@ import com.king.ai.audit.AuditLogService;
 import com.king.ai.common.ApiResponse;
 import com.king.ai.common.security.RequestContext;
 import com.king.ai.common.security.SpaceRole;
+import com.king.ai.common.web.ClientIpResolver;
 import com.king.ai.common.web.RequestIdFilter;
 import com.king.ai.finops.dto.QuotaUpdateRequest;
 import com.king.ai.finops.dto.UsageSummary;
@@ -26,6 +27,7 @@ public class FinopsController {
     private final UsageLedger usageLedger;
     private final SpaceService spaceService;
     private final AuditLogService auditLogService;
+    private final ClientIpResolver clientIpResolver;
 
     @GetMapping("/usage")
     public ApiResponse<UsageSummary> usage() {
@@ -43,7 +45,7 @@ public class FinopsController {
                 "finops.quota_update", "space", String.valueOf(spaceId),
                 AuditLogService.STATUS_SUCCESS,
                 "monthlyTokenQuota=" + request.monthlyTokenQuota(),
-                httpRequest.getRemoteAddr(), httpRequest.getHeader("User-Agent"),
+                clientIpResolver.resolve(httpRequest), httpRequest.getHeader("User-Agent"),
                 MDC.get(RequestIdFilter.MDC_KEY));
         return ApiResponse.ok(summary);
     }

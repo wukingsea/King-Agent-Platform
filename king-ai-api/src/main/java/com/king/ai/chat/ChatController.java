@@ -13,6 +13,7 @@ import com.king.ai.common.ApiResponse;
 import com.king.ai.common.BizException;
 import com.king.ai.common.PageResult;
 import com.king.ai.common.security.RequestContext;
+import com.king.ai.common.web.ClientIpResolver;
 import com.king.ai.system.SpaceService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -42,6 +43,7 @@ public class ChatController {
     private final ToolApprovalRegistry toolApprovalRegistry;
     private final SpaceService spaceService;
     private final AuditLogService auditLogService;
+    private final ClientIpResolver clientIpResolver;
 
     @GetMapping("/sessions")
     public ApiResponse<PageResult<ChatSessionView>> sessions(@RequestParam(required = false) Long agentId,
@@ -111,7 +113,7 @@ public class ChatController {
                 request.approved() ? AuditLogService.STATUS_SUCCESS : AuditLogService.STATUS_DENIED,
                 (request.approved() ? "批准" : "拒绝") + "工具调用 " + pending.toolName()
                         + "（来源：" + pending.source() + "）",
-                httpRequest.getRemoteAddr(), httpRequest.getHeader("User-Agent"), requestId);
+                clientIpResolver.resolve(httpRequest), httpRequest.getHeader("User-Agent"), requestId);
         return ApiResponse.ok(request.approved());
     }
 }

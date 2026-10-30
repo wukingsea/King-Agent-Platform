@@ -1,6 +1,7 @@
 package com.king.ai.auth;
 
 import com.king.ai.common.BizException;
+import com.king.ai.common.RedisFailurePolicy;
 import com.king.ai.common.Texts;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +35,8 @@ public class RedisLoginAttemptGuard implements LoginAttemptGuard {
         } catch (BizException ex) {
             throw ex;
         } catch (RuntimeException ex) {
-            log.warn("Login attempt guard unavailable: {}", ex.getMessage());
+            // Credential-stuffing protection must not disappear during a Redis outage.
+            throw RedisFailurePolicy.failClosed("login attempt guard", ex);
         }
     }
 
@@ -60,7 +62,7 @@ public class RedisLoginAttemptGuard implements LoginAttemptGuard {
                 lock(LOCK_PREFIX + "ip:" + ip, LoginFailurePolicy.IP_LOCK);
             }
         } catch (RuntimeException ex) {
-            log.warn("Failed to record login failure: {}", ex.getMessage());
+            RedisFailurePolicy.failOpen(log, "login failure accounting", ex);
         }
     }
 
@@ -71,7 +73,7 @@ public class RedisLoginAttemptGuard implements LoginAttemptGuard {
             redis.delete(FAIL_PREFIX + pairKey);
             redis.delete(LOCK_PREFIX + pairKey);
         } catch (RuntimeException ex) {
-            log.warn("Failed to clear login failures: {}", ex.getMessage());
+            RedisFailurePolicy.failOpen(log, "login failure reset", ex);
         }
     }
 

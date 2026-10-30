@@ -82,7 +82,8 @@ public class AgentService {
     private final KingAiProperties properties;
     private final LicenseService licenseService;
 
-    public PageResult<AgentView> list(Long spaceId, String keyword, PageQuery query) {
+    public PageResult<AgentView> list(Long spaceId, String keyword, PageQuery query,
+                                      boolean includeSystemPrompt) {
         LambdaQueryWrapper<Agent> wrapper = new LambdaQueryWrapper<Agent>()
                 .eq(Agent::getSpaceId, spaceId);
         if (!Texts.isBlank(keyword)) {
@@ -99,7 +100,7 @@ public class AgentService {
         Map<Long, AgentBindings> bindings = bindingsFor(agents.stream().map(Agent::getId).toList());
         List<AgentView> views = agents.stream()
                 .map(agent -> view(agent, models.get(agent.getModelId()),
-                        bindings.getOrDefault(agent.getId(), emptyBindings())))
+                        bindings.getOrDefault(agent.getId(), emptyBindings()), includeSystemPrompt))
                 .toList();
         return PageResult.of(views, result.getTotal(), query.page(), query.size());
     }
@@ -128,8 +129,8 @@ public class AgentService {
         return agent;
     }
 
-    public AgentView detail(Long spaceId, Long id) {
-        return view(require(spaceId, id));
+    public AgentView detail(Long spaceId, Long id, boolean includeSystemPrompt) {
+        return view(require(spaceId, id), includeSystemPrompt);
     }
 
     @Transactional
@@ -358,14 +359,20 @@ public class AgentService {
     }
 
     public AgentView view(Agent agent) {
-        SupplierModel model = modelMapper.selectById(agent.getModelId());
-        return view(agent, model, bindings(agent.getId()));
+        return view(agent, true);
     }
 
-    private AgentView view(Agent agent, SupplierModel model, AgentBindings bindings) {
+    private AgentView view(Agent agent, boolean includeSystemPrompt) {
+        SupplierModel model = modelMapper.selectById(agent.getModelId());
+        return view(agent, model, bindings(agent.getId()), includeSystemPrompt);
+    }
+
+    private AgentView view(Agent agent, SupplierModel model, AgentBindings bindings,
+                           boolean includeSystemPrompt) {
         return new AgentView(agent.getId(), agent.getSpaceId(), agent.getName(), agent.getIntro(),
                 agent.getModelId(), model == null ? "-" : model.getName(),
-                model == null ? "" : model.getModel(), agent.getSystemPrompt(), agent.getTemperature(),
+                model == null ? "" : model.getModel(),
+                includeSystemPrompt ? agent.getSystemPrompt() : "", agent.getTemperature(),
                 agent.getMaxTokens(), agent.getPublishStatus(), agent.getPublicId(), agent.getStatus(),
                 agent.getPublishedVersion(), parseTools(agent.getAllowedTools()),
                 normalizeApprovalMode(agent.getToolApprovalMode()), agent.getFallbackModelId(),

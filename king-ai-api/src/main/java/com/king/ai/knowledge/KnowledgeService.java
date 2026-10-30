@@ -14,11 +14,13 @@ import com.king.ai.knowledge.dto.KnowledgeChunkView;
 import com.king.ai.knowledge.dto.KnowledgeDocDetail;
 import com.king.ai.knowledge.dto.KnowledgeDocTextRequest;
 import com.king.ai.knowledge.dto.KnowledgeDocView;
+import com.king.ai.knowledge.dto.KnowledgeIndexJobView;
 import com.king.ai.knowledge.dto.KnowledgeSearchResult;
 import com.king.ai.knowledge.dto.RetrievedChunk;
 import com.king.ai.knowledge.entity.KnowledgeBase;
 import com.king.ai.knowledge.entity.KnowledgeChunk;
 import com.king.ai.knowledge.entity.KnowledgeDoc;
+import com.king.ai.knowledge.entity.KnowledgeIndexJob;
 import com.king.ai.knowledge.mapper.KnowledgeBaseMapper;
 import com.king.ai.knowledge.mapper.KnowledgeChunkMapper;
 import com.king.ai.knowledge.ocr.OcrService;
@@ -392,6 +394,48 @@ public class KnowledgeService {
         if (STATUS_PROCESSING.equals(doc.getStatus()) && doc.getUpdatedAt() != null
                 && doc.getUpdatedAt().isAfter(LocalDateTime.now().minusMinutes(10))) {
             throw BizException.conflict("文档正在处理中，请稍后再试");
+        }
+        updateDocState(docId, STATUS_PENDING, 0, "");
+        scheduleIndex(docId);
+        doc.setStatus(STATUS_PENDING);
+        doc.setChunkCount(0);
+        int chars = doc.getContent() == null ? 0 : doc.getContent().length();
+        return view(doc, chars);
+    }
+
+    /**
+     * Lists dead-letter index jobs belonging to one knowledge base. Jobs whose document has been
+     * deleted or moved are filtered out so operators only see actionable entries.
+     */
+    public List<KnowledgeIndexJobView> failedIndexJobs(Long spaceId, Long knowledgeBaseId, int limit) {
+        require(spaceId, knowledgeBaseId);
+        List<KnowledgeIndexJob> jobs = indexQueue.failed(Math.min(200, Math.max(1, limit)));
+        if (jobs.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, KnowledgeDoc> docs = docMap(jobs.stream().map(KnowledgeIndexJob::getDocId).toList());
+        return jobs.stream()
+                .map(job -> {
+                    KnowledgeDoc doc = docs.get(job.getDocId());
+                    if (doc == null || !Objects.equals(doc.getKnowledgeBaseId(), knowledgeBaseId)) {
+                        return null;
+                    }
+                    return new KnowledgeIndexJobView(doc.getId(), doc.getName(), job.getAttempts(),
+                            job.getLastError(), job.getUpdatedAt());
+                })
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    /**
+     * Replays a permanently failed index job using the document content already stored, without
+     * requiring the operator to rebuild the document.
+     */
+    public KnowledgeDocView replayFailedIndex(Long spaceId, Long knowledgeBaseId, Long docId) {
+        KnowledgeDoc doc = requireDoc(spaceId, knowledgeBaseId, docId);
+        KnowledgeIndexJob job = indexQueue.find(docId);
+        if (job == null || !KnowledgeIndexQueue.STATUS_FAILED.equals(job.getStatus())) {
+            throw BizException.conflict("该文档没有可重放的失败索引任务");
         }
         updateDocState(docId, STATUS_PENDING, 0, "");
         scheduleIndex(docId);

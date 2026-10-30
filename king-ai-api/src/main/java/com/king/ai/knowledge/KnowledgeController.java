@@ -13,6 +13,7 @@ import com.king.ai.knowledge.dto.KnowledgeDocAclRequest;
 import com.king.ai.knowledge.dto.KnowledgeDocDetail;
 import com.king.ai.knowledge.dto.KnowledgeDocTextRequest;
 import com.king.ai.knowledge.dto.KnowledgeDocView;
+import com.king.ai.knowledge.dto.KnowledgeIndexJobView;
 import com.king.ai.knowledge.dto.KnowledgeSearchRequest;
 import com.king.ai.knowledge.dto.KnowledgeSearchResult;
 import jakarta.validation.Valid;
@@ -127,6 +128,20 @@ public class KnowledgeController {
     @RequireSpaceRole(SpaceRole.EDITOR)
     public ApiResponse<KnowledgeDocView> reindex(@PathVariable Long id, @PathVariable Long docId) {
         return ApiResponse.ok(knowledgeService.reindex(RequestContext.requireSpaceId(), id, docId));
+    }
+
+    @RequireSpaceRole(SpaceRole.VIEWER)
+    @GetMapping("/{id}/index-jobs")
+    public ApiResponse<List<KnowledgeIndexJobView>> failedIndexJobs(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "50") int limit) {
+        return ApiResponse.ok(knowledgeService.failedIndexJobs(RequestContext.requireSpaceId(), id, limit));
+    }
+
+    @PostMapping("/{id}/docs/{docId}/index/replay")
+    @RequireSpaceRole(SpaceRole.EDITOR)
+    public ApiResponse<KnowledgeDocView> replayIndex(@PathVariable Long id, @PathVariable Long docId) {
+        return ApiResponse.ok(knowledgeService.replayFailedIndex(RequestContext.requireSpaceId(), id, docId));
     }
 
     @DeleteMapping("/{id}/docs/{docId}")

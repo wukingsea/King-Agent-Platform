@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.king.ai.common.CryptoService;
+import com.king.ai.common.UpstreamErrors;
 import com.king.ai.common.web.OutboundUrlGuard;
 import com.king.ai.llm.LlmClientFactory;
 import com.king.ai.model.dto.SupplierSaveRequest;
+import com.king.ai.model.dto.SupplierTestResult;
 import com.king.ai.model.entity.Supplier;
 import com.king.ai.model.mapper.SupplierMapper;
 import com.king.ai.model.mapper.SupplierModelMapper;
@@ -35,6 +37,7 @@ class SupplierServiceTest {
     private SupplierMapper supplierMapper;
     private SupplierModelMapper modelMapper;
     private CryptoService cryptoService;
+    private LlmClientFactory clientFactory;
     private SupplierService service;
 
     @BeforeEach
@@ -42,8 +45,9 @@ class SupplierServiceTest {
         supplierMapper = mock(SupplierMapper.class);
         modelMapper = mock(SupplierModelMapper.class);
         cryptoService = mock(CryptoService.class);
+        clientFactory = mock(LlmClientFactory.class);
         service = new SupplierService(supplierMapper, modelMapper, cryptoService,
-                mock(OutboundUrlGuard.class), mock(LlmClientFactory.class), new ObjectMapper());
+                mock(OutboundUrlGuard.class), clientFactory, new ObjectMapper());
     }
 
     @Test
@@ -131,6 +135,19 @@ class SupplierServiceTest {
         assertThat(captor.getValue().getApiKey()).isEqualTo("old");
         assertThat(captor.getValue().getApiKeyRotatedAt()).isEqualTo(ORIGINAL_ROTATED_AT);
         verify(cryptoService, never()).encrypt(any());
+    }
+
+    @Test
+    void connectionTestDoesNotLeakUpstreamErrorText() {
+        when(supplierMapper.selectById(9L)).thenReturn(existingSupplier());
+        when(clientFactory.clientFor(any(Supplier.class)))
+                .thenThrow(new RuntimeException("401 for api key sk-live-secret"));
+
+        SupplierTestResult result = service.test(1L, 9L);
+
+        assertThat(result.ok()).isFalse();
+        assertThat(result.message()).isEqualTo(UpstreamErrors.CONNECTION_TEST_FAILED);
+        assertThat(result.message()).doesNotContain("sk-live-secret");
     }
 
     private Supplier existingSupplier() {

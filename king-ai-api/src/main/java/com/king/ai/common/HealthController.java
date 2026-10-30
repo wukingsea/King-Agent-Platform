@@ -1,6 +1,7 @@
 package com.king.ai.common;
 
 import com.king.ai.config.StateStoreHealthIndicator;
+import com.king.ai.knowledge.vector.VectorStore;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.Status;
@@ -26,6 +27,7 @@ public class HealthController {
 
     private final JdbcTemplate jdbcTemplate;
     private final StateStoreHealthIndicator stateStore;
+    private final VectorStore vectorStore;
 
     @GetMapping("/health")
     public ResponseEntity<ApiResponse<Map<String, Object>>> health() {
@@ -38,13 +40,20 @@ public class HealthController {
         }
         Health store = stateStore.health();
         boolean storeUp = Status.UP.equals(store.getStatus());
-        boolean up = dbUp && storeUp;
+        boolean vectorUp;
+        try {
+            vectorUp = vectorStore.healthy();
+        } catch (RuntimeException ex) {
+            vectorUp = false;
+        }
+        boolean up = dbUp && storeUp && vectorUp;
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", up ? "UP" : "DOWN");
         body.put("app", "King AI Platform");
         body.put("db", dbUp ? "UP" : "DOWN");
         body.put("stateStore", store.getStatus().getCode());
+        body.put("vector", vectorUp ? "UP" : "DOWN");
         body.put("time", LocalDateTime.now());
         ApiResponse<Map<String, Object>> response = up
                 ? ApiResponse.ok(body)

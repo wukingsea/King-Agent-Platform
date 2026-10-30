@@ -37,7 +37,7 @@ public class AgentController {
                                                    @RequestParam(defaultValue = "1") int page,
                                                    @RequestParam(defaultValue = "20") int size) {
         return ApiResponse.ok(agentService.list(RequestContext.requireSpaceId(), keyword,
-                PageQuery.of(page, size, 20)));
+                PageQuery.of(page, size, 20), canReadSystemPrompt()));
     }
 
     @RequireSpaceRole(SpaceRole.VIEWER)
@@ -49,7 +49,16 @@ public class AgentController {
     @RequireSpaceRole(SpaceRole.VIEWER)
     @GetMapping("/{id}")
     public ApiResponse<AgentView> detail(@PathVariable Long id) {
-        return ApiResponse.ok(agentService.detail(RequestContext.requireSpaceId(), id));
+        return ApiResponse.ok(agentService.detail(RequestContext.requireSpaceId(), id,
+                canReadSystemPrompt()));
+    }
+
+    /**
+     * System prompts are editable configuration, not runtime metadata: roles below EDITOR only
+     * need agent metadata, so the prompt is withheld to avoid leaking proprietary instructions.
+     */
+    private static boolean canReadSystemPrompt() {
+        return RequestContext.require().hasSpaceRole(SpaceRole.EDITOR);
     }
 
     @PostMapping

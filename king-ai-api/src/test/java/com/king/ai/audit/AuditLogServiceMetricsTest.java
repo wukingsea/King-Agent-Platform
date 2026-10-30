@@ -2,6 +2,7 @@ package com.king.ai.audit;
 
 import com.king.ai.audit.entity.AuditLog;
 import com.king.ai.audit.mapper.AuditLogMapper;
+import com.king.ai.common.web.ClientIpResolver;
 import com.king.ai.config.KingAiProperties;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -23,7 +24,8 @@ class AuditLogServiceMetricsTest {
         KingAiProperties properties = new KingAiProperties();
         properties.getAudit().setEnabled(true);
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
-        AuditLogService service = new AuditLogService(mapper, properties, registry);
+        AuditLogService service = new AuditLogService(mapper, properties, registry,
+                mock(ClientIpResolver.class));
 
         service.recordChat(1L, 2L, "tester", "chat.send", "9", "SUCCESS",
                 "detail", "127.0.0.1", "test-agent", "req-1");
@@ -48,7 +50,8 @@ class AuditLogServiceMetricsTest {
                 return super.counter(name, tags);
             }
         };
-        AuditLogService service = new AuditLogService(mapper, properties, registry);
+        AuditLogService service = new AuditLogService(mapper, properties, registry,
+                mock(ClientIpResolver.class));
 
         assertThatCode(() -> service.recordChat(1L, 2L, "tester", "chat.send", "9", "SUCCESS",
                 "detail", "127.0.0.1", "test-agent", "req-1"))
