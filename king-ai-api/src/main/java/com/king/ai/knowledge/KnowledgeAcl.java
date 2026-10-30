@@ -16,6 +16,8 @@ import java.util.Set;
 public final class KnowledgeAcl {
 
     private static final Set<String> VALID_ROLES = Set.of("VIEWER", "EDITOR", "ADMIN", "OWNER", "AUDITOR");
+    private static final List<String> READABLE_ORDER =
+            List.of("VIEWER", "AUDITOR", "EDITOR", "ADMIN", "OWNER");
 
     private KnowledgeAcl() {
     }
@@ -56,6 +58,12 @@ public final class KnowledgeAcl {
         }
         int userRank = roleRank(role);
         return allowed.stream().anyMatch(value -> userRank >= roleRank(value));
+    }
+
+    /** Thresholds a member with the given role can read, for building list filters. */
+    public static List<String> readableRoles(String role) {
+        int rank = roleRank(role);
+        return READABLE_ORDER.stream().filter(candidate -> roleRank(candidate) <= rank).toList();
     }
 
     static int roleRank(String role) {

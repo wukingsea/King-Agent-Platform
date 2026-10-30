@@ -65,4 +65,17 @@ class KnowledgeAclTest {
         assertThat(KnowledgeAcl.roleRank("AUDITOR")).isEqualTo(1);
         assertThat(KnowledgeAcl.roleRank("VIEWER")).isEqualTo(1);
     }
+
+    @Test
+    void readableThresholdsGrowWithRoleRank() {
+        assertThat(KnowledgeAcl.readableRoles(null)).containsExactly("VIEWER", "AUDITOR");
+        assertThat(KnowledgeAcl.readableRoles("VIEWER")).containsExactly("VIEWER", "AUDITOR");
+        assertThat(KnowledgeAcl.readableRoles("AUDITOR")).containsExactly("VIEWER", "AUDITOR");
+        assertThat(KnowledgeAcl.readableRoles("EDITOR"))
+                .containsExactly("VIEWER", "AUDITOR", "EDITOR");
+        assertThat(KnowledgeAcl.readableRoles("ADMIN"))
+                .containsExactly("VIEWER", "AUDITOR", "EDITOR", "ADMIN");
+        assertThat(KnowledgeAcl.readableRoles("OWNER"))
+                .containsExactly("VIEWER", "AUDITOR", "EDITOR", "ADMIN", "OWNER");
+    }
 }

@@ -81,7 +81,7 @@ public class KnowledgeController {
                                                           @RequestParam(defaultValue = "1") int page,
                                                           @RequestParam(defaultValue = "20") int size) {
         return ApiResponse.ok(knowledgeService.listDocs(RequestContext.requireSpaceId(), id, keyword,
-                page, size));
+                page, size, callerRole()));
     }
 
     @PostMapping("/{id}/docs/text")
@@ -101,7 +101,8 @@ public class KnowledgeController {
     @RequireSpaceRole(SpaceRole.VIEWER)
     @GetMapping("/{id}/docs/{docId}")
     public ApiResponse<KnowledgeDocDetail> docDetail(@PathVariable Long id, @PathVariable Long docId) {
-        return ApiResponse.ok(knowledgeService.docDetail(RequestContext.requireSpaceId(), id, docId));
+        return ApiResponse.ok(knowledgeService.docDetail(RequestContext.requireSpaceId(), id, docId,
+                callerRole()));
     }
 
     @PutMapping("/{id}/docs/{docId}/acl")
@@ -109,7 +110,7 @@ public class KnowledgeController {
     public ApiResponse<KnowledgeDocView> updateDocAcl(@PathVariable Long id, @PathVariable Long docId,
                                                       @Valid @RequestBody KnowledgeDocAclRequest request) {
         return ApiResponse.ok(knowledgeService.updateDocAcl(RequestContext.requireSpaceId(), id, docId,
-                request.allowedRoles()));
+                request.allowedRoles(), callerRole()));
     }
 
     @RequireSpaceRole(SpaceRole.VIEWER)
@@ -118,7 +119,8 @@ public class KnowledgeController {
                                                               @PathVariable Long docId,
                                                               @RequestParam(defaultValue = "1") int page,
                                                               @RequestParam(defaultValue = "50") int size) {
-        return ApiResponse.ok(knowledgeService.chunks(RequestContext.requireSpaceId(), id, docId, page, size));
+        return ApiResponse.ok(knowledgeService.chunks(RequestContext.requireSpaceId(), id, docId, page, size,
+                callerRole()));
     }
 
     @PostMapping("/{id}/docs/{docId}/reindex")
@@ -138,9 +140,12 @@ public class KnowledgeController {
     @RequireSpaceRole(SpaceRole.VIEWER)
     public ApiResponse<List<KnowledgeSearchResult>> search(@PathVariable Long id,
                                                            @Valid @RequestBody KnowledgeSearchRequest request) {
-        var principal = RequestContext.require();
-        String role = principal.isAdmin() ? "OWNER" : principal.spaceRole();
         return ApiResponse.ok(knowledgeService.search(RequestContext.requireSpaceId(), id,
-                request.query(), request.topK(), role));
+                request.query(), request.topK(), callerRole()));
+    }
+
+    private static String callerRole() {
+        var principal = RequestContext.require();
+        return principal.isAdmin() ? "OWNER" : principal.spaceRole();
     }
 }

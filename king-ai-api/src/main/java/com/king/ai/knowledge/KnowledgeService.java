@@ -241,7 +241,7 @@ public class KnowledgeService {
     }
 
     public PageResult<KnowledgeDocView> listDocs(Long spaceId, Long knowledgeBaseId, String keyword,
-                                                 int pageNo, int size) {
+                                                 int pageNo, int size, String role) {
         require(spaceId, knowledgeBaseId);
         int page = Math.max(1, pageNo);
         int pageSize = Math.max(1, Math.min(size, 100));
@@ -252,6 +252,7 @@ public class KnowledgeService {
             where.append(" AND name LIKE ?");
             args.add("%" + keyword.trim() + "%");
         }
+        where.append(readableDocCondition(role, args));
         Long total = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM king_ai_knowledge_doc" + where, Long.class, args.toArray());
         String sql = "SELECT id, knowledge_base_id, name, source_type, chunk_count, status, error_message, "
@@ -266,8 +267,9 @@ public class KnowledgeService {
 
     @Transactional
     public KnowledgeDocView updateDocAcl(Long spaceId, Long knowledgeBaseId, Long docId,
-                                         List<String> allowedRoles) {
+                                         List<String> allowedRoles, String role) {
         KnowledgeDoc doc = requireDoc(spaceId, knowledgeBaseId, docId);
+        requireReadable(doc, role);
         doc.setAllowedRoles(normalizeRoles(allowedRoles));
         OptimisticLocks.requireUpdated(docMapper.updateById(doc), "知识库文档");
         int chars = doc.getContent() == null ? 0 : doc.getContent().length();
@@ -360,16 +362,18 @@ public class KnowledgeService {
         return view(doc, content.length());
     }
 
-    public KnowledgeDocDetail docDetail(Long spaceId, Long knowledgeBaseId, Long docId) {
+    public KnowledgeDocDetail docDetail(Long spaceId, Long knowledgeBaseId, Long docId, String role) {
         KnowledgeDoc doc = requireDoc(spaceId, knowledgeBaseId, docId);
+        requireReadable(doc, role);
         return new KnowledgeDocDetail(doc.getId(), doc.getKnowledgeBaseId(), doc.getName(), doc.getSourceType(),
                 doc.getContent(), doc.getChunkCount(), doc.getStatus(), doc.getErrorMessage(),
                 doc.getCreatedAt(), doc.getUpdatedAt());
     }
 
     public PageResult<KnowledgeChunkView> chunks(Long spaceId, Long knowledgeBaseId, Long docId,
-                                                 int pageNo, int size) {
-        requireDoc(spaceId, knowledgeBaseId, docId);
+                                                 int pageNo, int size, String role) {
+        KnowledgeDoc doc = requireDoc(spaceId, knowledgeBaseId, docId);
+        requireReadable(doc, role);
         int page = Math.max(1, pageNo);
         int pageSize = Math.max(1, Math.min(size, 100));
         Page<KnowledgeChunk> result = chunkMapper.selectPage(new Page<>(page, pageSize),
@@ -726,6 +730,27 @@ public class KnowledgeService {
 
     private static boolean canRead(KnowledgeDoc doc, String role) {
         return KnowledgeAcl.canRead(doc.getAllowedRoles(), role);
+    }
+
+    private static void requireReadable(KnowledgeDoc doc, String role) {
+        if (!canRead(doc, role)) {
+            throw BizException.forbidden("无权访问该文档");
+        }
+    }
+
+    static String readableDocCondition(String role, List<Object> args) {
+        StringBuilder condition = new StringBuilder(" AND (allowed_roles IS NULL OR allowed_roles = ''");
+        for (String value : KnowledgeAcl.readableRoles(role)) {
+            condition.append(" OR allowed_roles = ?");
+            args.add(value);
+            condition.append(" OR allowed_roles LIKE ?");
+            args.add(value + ",%");
+            condition.append(" OR allowed_roles LIKE ?");
+            args.add("%," + value);
+            condition.append(" OR allowed_roles LIKE ?");
+            args.add("%," + value + ",%");
+        }
+        return condition.append(")").toString();
     }
 
     private KnowledgeBaseView view(KnowledgeBase base, String modelName, long docCount, long chunkCount) {

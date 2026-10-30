@@ -28,12 +28,11 @@ public record UserPrincipal(Long id, String username, String nickname, String ro
     }
 
     public boolean canAuditSpace() {
-        return isAdmin() || roleInSpace() == SpaceRole.AUDITOR
-                || roleInSpace().atLeast(SpaceRole.ADMIN);
+        return isAdmin() || roleInSpace().satisfies(SpaceRole.AUDITOR);
     }
 
     public boolean hasSpaceRole(SpaceRole required) {
-        return isAdmin() || (spaceId != null && roleInSpace().atLeast(required));
+        return isAdmin() || (spaceId != null && roleInSpace().satisfies(required));
     }
 
     public boolean hasAnySpaceRole(SpaceRole[] required) {
@@ -45,7 +44,7 @@ public record UserPrincipal(Long id, String username, String nickname, String ro
         }
         SpaceRole current = roleInSpace();
         for (SpaceRole role : required) {
-            if (current == role || current.atLeast(role)) {
+            if (current.satisfies(role)) {
                 return true;
             }
         }

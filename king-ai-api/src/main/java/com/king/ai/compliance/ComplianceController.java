@@ -239,16 +239,8 @@ public class ComplianceController {
                 .body(csv.getBytes(StandardCharsets.UTF_8));
     }
 
-    /**
-     * {@code @RequireSpaceRole} 的数组匹配是“任一角色 or 更高等级”，而 AUDITOR 与 VIEWER
-     * 同级别；这里再按精确角色判一次，避免 VIEWER/EDITOR 读到审计类数据。
-     */
     private static void requireAuditorOrAdmin(UserPrincipal principal) {
-        if (principal.isAdmin()) {
-            return;
-        }
-        SpaceRole role = principal.roleInSpace();
-        if (role != SpaceRole.OWNER && role != SpaceRole.ADMIN && role != SpaceRole.AUDITOR) {
+        if (!principal.isAdmin() && !principal.roleInSpace().satisfies(SpaceRole.AUDITOR)) {
             throw BizException.forbidden("需要管理员或审计员权限");
         }
     }

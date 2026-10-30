@@ -142,7 +142,7 @@ public class SpaceService {
         if (role == null) {
             throw BizException.forbidden("无权访问该业务空间");
         }
-        if (!role.atLeast(required)) {
+        if (!role.satisfies(required)) {
             throw BizException.forbidden("当前空间角色无权执行该操作");
         }
     }
@@ -156,7 +156,7 @@ public class SpaceService {
             throw BizException.forbidden("无权访问该业务空间");
         }
         for (SpaceRole candidate : allowed) {
-            if (role == candidate || role.atLeast(candidate)) {
+            if (role.satisfies(candidate)) {
                 return;
             }
         }
@@ -168,7 +168,7 @@ public class SpaceService {
             return true;
         }
         SpaceRole role = roleOf(principal.id(), spaceId);
-        return role == SpaceRole.AUDITOR || (role != null && role.atLeast(SpaceRole.ADMIN));
+        return role != null && role.satisfies(SpaceRole.AUDITOR);
     }
 
     public boolean canManageSessions(UserPrincipal principal, Long spaceId) {
