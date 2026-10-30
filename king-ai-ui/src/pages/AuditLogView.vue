@@ -351,7 +351,7 @@ onMounted(() => {
 
 .action-text {
   font-size: 12px;
-  color: #c4b5fd;
+  color: var(--k-violet);
 }
 
 .muted {
@@ -371,7 +371,7 @@ onMounted(() => {
   padding: 16px;
   border-radius: 12px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--k-fill-soft);
 }
 
 .detail-item {

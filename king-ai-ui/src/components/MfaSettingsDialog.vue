@@ -243,7 +243,7 @@ async function copySecret() {
 }
 
 .status-icon.on {
-  color: #6ee7b7;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.1);
   border-color: rgba(52, 211, 153, 0.28);
 }
@@ -272,7 +272,7 @@ async function copySecret() {
 }
 
 .badge.on {
-  color: #6ee7b7;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.12);
   border: 1px solid rgba(52, 211, 153, 0.3);
 }
@@ -317,7 +317,7 @@ async function copySecret() {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #c4b5fd;
+  color: var(--k-violet);
 }
 
 .mono {
@@ -352,7 +352,13 @@ async function copySecret() {
   font-family: var(--font-mono);
   font-size: 12px;
   letter-spacing: 0.04em;
-  color: #9be8ff;
+  color: var(--k-cyan-soft);
   text-align: center;
+}
+
+/* --- 浅色主题适配 --- */
+html.light .secret-box,
+html.light .code-pill {
+  background: var(--k-code-bg);
 }
 </style>

@@ -21,10 +21,10 @@
 ```bash
 mvn -q -pl king-ai-api -am package -DskipTests
 cd king-ai-api
-java -jar target/king-ai-api.jar
+java -jar target/king-ai-api.jar --spring.profiles.active=local
 ```
 
-默认 `local` profile 使用：
+本地开发必须显式启用 `local` profile；未指定时会使用 `prod` profile。`local` profile 使用：
 
 - H2 文件数据库：`king-ai-api/data/kingai`
 - 内存 Token 存储与内存限流/并发守卫

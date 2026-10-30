@@ -777,7 +777,7 @@ onBeforeUnmount(() => {
   height: 28px;
   border-radius: 8px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--k-fill);
   color: var(--king-text-soft);
   cursor: pointer;
   transition: all 0.18s ease;
@@ -808,7 +808,7 @@ onBeforeUnmount(() => {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  border: 1.5px solid var(--king-line-strong);
   border-top-color: var(--king-primary);
   animation: spin 0.8s linear infinite;
 }
@@ -836,7 +836,7 @@ onBeforeUnmount(() => {
 }
 
 .session-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--k-fill);
 }
 
 .session-item.active {
@@ -847,14 +847,14 @@ onBeforeUnmount(() => {
 .session-title {
   font-size: 12px;
   font-weight: 520;
-  color: #a8b3cf;
+  color: var(--k-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .session-item.active .session-title {
-  color: #eee9ff;
+  color: var(--k-violet-soft);
 }
 
 .session-meta {
@@ -988,12 +988,12 @@ onBeforeUnmount(() => {
 
 .head-btn:hover {
   color: var(--king-text);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--k-fill);
   border-color: var(--king-line);
 }
 
 .head-btn.danger:hover {
-  color: #ffabb7;
+  color: var(--k-red);
   background: rgba(251, 113, 133, 0.08);
   border-color: rgba(251, 113, 133, 0.2);
 }
@@ -1076,7 +1076,7 @@ onBeforeUnmount(() => {
   font-weight: 720;
   color: #fff;
   background: linear-gradient(135deg, #8b5cf6, #6d6bff 60%, #22d3ee);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid var(--king-line-strong);
   box-shadow: 0 16px 40px rgba(91, 69, 220, 0.35);
 }
 
@@ -1109,15 +1109,15 @@ onBeforeUnmount(() => {
   padding: 9px 13px;
   border-radius: 10px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.025);
-  color: #97a3c0;
+  background: var(--k-fill-soft);
+  color: var(--k-dim);
   font-size: 11.5px;
   cursor: pointer;
   transition: all 0.18s ease;
 }
 
 .suggestion:hover {
-  color: #ddd6ff;
+  color: var(--k-violet-soft);
   border-color: rgba(124, 92, 255, 0.4);
   background: rgba(124, 92, 255, 0.09);
   transform: translateY(-1px);
@@ -1193,7 +1193,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   font-size: 11px;
-  color: #fcd34d;
+  color: var(--k-amber);
 }
 
 .approval-source {
@@ -1246,7 +1246,7 @@ onBeforeUnmount(() => {
 }
 
 .approval-btn.reject {
-  color: #ffabb7;
+  color: var(--k-red);
   border-color: rgba(251, 113, 133, 0.25);
   background: rgba(251, 113, 133, 0.08);
 }
@@ -1342,7 +1342,7 @@ onBeforeUnmount(() => {
 
 .stop-btn {
   padding: 0 11px;
-  color: #ffabb7;
+  color: var(--k-red);
   background: rgba(251, 113, 133, 0.09);
   border: 1px solid rgba(251, 113, 133, 0.22);
   font-size: 10.5px;
@@ -1380,7 +1380,7 @@ onBeforeUnmount(() => {
     transform: translateX(-102%);
     transition: transform 0.22s ease;
     box-shadow: 24px 0 60px rgba(0, 0, 0, 0.45);
-    background: #0a0f20;
+    background: var(--king-bg-soft);
   }
 
   .rail-open .rail {
@@ -1392,7 +1392,7 @@ onBeforeUnmount(() => {
     position: absolute;
     inset: 0;
     z-index: 3;
-    background: rgba(3, 6, 16, 0.55);
+    background: var(--k-mask);
     backdrop-filter: blur(2px);
   }
 
@@ -1427,5 +1427,52 @@ onBeforeUnmount(() => {
   .head-session {
     max-width: 180px;
   }
+}
+
+/* --- 浅色主题适配 --- */
+html.light .chat-console {
+  background: var(--king-panel);
+}
+
+html.light .variant-public {
+  background: transparent;
+}
+
+html.light .rail {
+  background: var(--king-panel);
+}
+
+html.light .variant-public .rail {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+html.light .chat-head {
+  background: var(--king-panel);
+}
+
+html.light .composer {
+  background: var(--king-panel-solid);
+}
+
+html.light .composer-wrap {
+  background: linear-gradient(180deg, transparent, rgba(244, 246, 251, 0.9) 30%);
+}
+
+html.light .approval-card {
+  background: rgba(251, 191, 36, 0.15);
+  border-color: rgba(180, 83, 9, 0.4);
+}
+
+html.light .approval-source {
+  color: var(--king-muted);
+}
+
+html.light .approval-tool {
+  color: var(--king-text);
+}
+
+html.light .approval-args {
+  background: rgba(15, 23, 42, 0.05);
+  color: var(--king-text-soft);
 }
 </style>

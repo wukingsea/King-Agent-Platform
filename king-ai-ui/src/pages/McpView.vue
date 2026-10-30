@@ -542,7 +542,7 @@ onMounted(loadServers)
   display: grid;
   place-items: center;
   font-size: 21px;
-  color: #b9a8ff;
+  color: var(--k-violet);
   background: linear-gradient(135deg, rgba(124, 92, 255, 0.26), rgba(56, 189, 248, 0.16));
   border: 1px solid rgba(124, 92, 255, 0.32);
 }
@@ -583,7 +583,7 @@ onMounted(loadServers)
   gap: 8px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(9, 13, 28, 0.62);
+  background: var(--k-code-bg);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: 12px;
@@ -609,7 +609,7 @@ onMounted(loadServers)
   border-radius: 999px;
   background: rgba(124, 92, 255, 0.14);
   border: 1px solid rgba(124, 92, 255, 0.26);
-  color: #c4b5fd;
+  color: var(--k-violet);
   font-family: var(--font-mono);
   letter-spacing: 0.02em;
 }
@@ -624,7 +624,7 @@ onMounted(loadServers)
 .meta-pill.warn {
   background: rgba(251, 191, 36, 0.1);
   border-color: rgba(251, 191, 36, 0.24);
-  color: #fcd88d;
+  color: var(--k-amber);
 }
 
 .meta-time {
@@ -682,13 +682,13 @@ onMounted(loadServers)
 .test-status.ok {
   background: rgba(52, 211, 153, 0.1);
   border: 1px solid rgba(52, 211, 153, 0.28);
-  color: #6ee7b7;
+  color: var(--k-green);
 }
 
 .test-status.fail {
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid rgba(248, 113, 113, 0.28);
-  color: #fca5a5;
+  color: var(--k-red);
 }
 
 .tool-list {
@@ -706,14 +706,14 @@ onMounted(loadServers)
 .tool-item {
   padding: 12px 14px;
   border-radius: 12px;
-  background: rgba(9, 13, 28, 0.55);
+  background: var(--k-code-bg);
   border: 1px solid var(--border-subtle);
   margin-bottom: 8px;
 }
 
 .tool-name {
   font-size: 13px;
-  color: #9be8ff;
+  color: var(--k-cyan-soft);
 }
 
 .tool-desc {

@@ -576,7 +576,7 @@ onMounted(loadSpaces)
   display: grid;
   place-items: center;
   font-size: 22px;
-  color: #c4b5fd;
+  color: var(--k-violet);
   background: linear-gradient(135deg, rgba(124, 92, 255, 0.28), rgba(56, 189, 248, 0.14));
   border: 1px solid rgba(124, 92, 255, 0.32);
 }
@@ -606,7 +606,7 @@ onMounted(loadSpaces)
   border-radius: 999px;
   background: rgba(56, 189, 248, 0.14);
   border: 1px solid rgba(56, 189, 248, 0.3);
-  color: #7dd3fc;
+  color: var(--k-sky);
   letter-spacing: 0.04em;
 }
 
@@ -616,7 +616,7 @@ onMounted(loadSpaces)
   border-radius: 999px;
   background: rgba(124, 92, 255, 0.12);
   border: 1px solid rgba(124, 92, 255, 0.28);
-  color: #c4b5fd;
+  color: var(--k-violet);
 }
 
 .space-code {
@@ -639,7 +639,7 @@ onMounted(loadSpaces)
   gap: 32px;
   padding: 14px 16px;
   border-radius: 12px;
-  background: rgba(9, 13, 28, 0.55);
+  background: var(--k-code-bg);
   border: 1px solid var(--border-subtle);
 }
 
@@ -700,7 +700,7 @@ onMounted(loadSpaces)
   border-radius: 12px;
   background: rgba(124, 92, 255, 0.08);
   border: 1px solid rgba(124, 92, 255, 0.2);
-  color: #c4b5fd;
+  color: var(--k-violet);
   font-size: 13px;
 }
 
@@ -731,7 +731,7 @@ onMounted(loadSpaces)
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--border-subtle);
-  background: rgba(9, 13, 28, 0.5);
+  background: var(--k-code-bg);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -761,7 +761,7 @@ onMounted(loadSpaces)
   place-items: center;
   font-size: 12px;
   font-weight: 600;
-  color: #cfc4ff;
+  color: var(--k-violet-soft);
   background: rgba(124, 92, 255, 0.2);
 }
 
@@ -792,7 +792,7 @@ onMounted(loadSpaces)
 
 .member-disabled {
   font-size: 10px;
-  color: #fca5a5;
+  color: var(--k-red);
 }
 
 .member-account {
@@ -814,7 +814,7 @@ onMounted(loadSpaces)
   display: grid;
   place-items: center;
   font-size: 12px;
-  color: #090d1c;
+  color: var(--king-bg);
 }
 
 .check.on {

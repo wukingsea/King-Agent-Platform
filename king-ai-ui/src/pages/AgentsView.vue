@@ -1307,7 +1307,7 @@ onMounted(async () => {
   padding: 0 11px;
   border-radius: 8px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--k-fill-soft);
   font-size: 10.5px;
   color: var(--king-muted);
 }
@@ -1430,23 +1430,23 @@ onMounted(async () => {
 }
 
 .badge.published {
-  color: #8bf0c8;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.1);
 }
 
 .badge.draft {
-  color: #c4b5fd;
+  color: var(--k-violet);
   background: rgba(124, 92, 255, 0.12);
 }
 
 .badge.disabled {
-  color: #9aa6c6;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--k-dim);
+  background: var(--k-fill);
 }
 
 .badge.version {
   font-family: var(--king-mono);
-  color: #9fd8ff;
+  color: var(--k-sky);
   background: rgba(56, 189, 248, 0.1);
 }
 
@@ -1463,7 +1463,7 @@ onMounted(async () => {
   padding: 8px 10px;
   border-radius: 9px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--k-fill-soft);
   font-size: 11px;
   color: var(--king-muted);
 }
@@ -1537,7 +1537,7 @@ onMounted(async () => {
 
 .version-note {
   font-size: 10px;
-  color: #9fd8ff;
+  color: var(--k-sky);
 }
 
 .version-actions {
@@ -1562,7 +1562,7 @@ onMounted(async () => {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--k-fill-soft);
 }
 
 .eval-main {
@@ -1634,7 +1634,7 @@ onMounted(async () => {
   margin: 16px 0 13px;
   padding: 12px 13px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.022);
+  background: var(--k-fill-soft);
   border: 1px solid var(--king-line);
 }
 
@@ -1677,14 +1677,14 @@ onMounted(async () => {
   padding: 4px 8px;
   border-radius: 6px;
   font-size: 9.5px;
-  color: #a7e9f5;
+  color: var(--k-cyan);
   background: rgba(34, 211, 238, 0.055);
   border: 1px solid rgba(34, 211, 238, 0.12);
 }
 
 .binding-pill.off {
   color: #596482;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--k-fill-soft);
   border-color: var(--king-line);
 }
 
@@ -1747,7 +1747,7 @@ onMounted(async () => {
   font-size: 12px;
   font-weight: 620;
   letter-spacing: 0.04em;
-  color: #b7a6ff;
+  color: var(--k-violet);
 }
 
 .inline-fields {

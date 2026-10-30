@@ -146,7 +146,7 @@ onMounted(decorate)
   border-radius: 6px;
   background: rgba(124, 92, 255, 0.13);
   border: 1px solid rgba(124, 92, 255, 0.16);
-  color: #d9d2ff;
+  color: var(--k-violet-soft);
   font-family: var(--king-mono);
   font-size: 0.88em;
 }
@@ -156,7 +156,7 @@ onMounted(decorate)
   margin: 0.9em 0;
   padding: 16px 18px;
   border-radius: 12px;
-  background: #0a0f1f;
+  background: var(--king-bg-soft);
   border: 1px solid var(--king-line);
   overflow-x: auto;
 }
@@ -165,7 +165,7 @@ onMounted(decorate)
   padding: 0;
   border: none;
   background: transparent;
-  color: #d5def7;
+  color: var(--k-dim);
   font-size: 12.5px;
   line-height: 1.65;
 }
@@ -194,7 +194,7 @@ onMounted(decorate)
 }
 
 .markdown-body :deep(th) {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--k-fill);
   color: var(--king-text);
   font-weight: 550;
 }

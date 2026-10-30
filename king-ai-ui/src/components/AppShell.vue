@@ -16,8 +16,10 @@ import {
   Memo,
   Menu,
   Monitor,
+  Moon,
   Odometer,
   OfficeBuilding,
+  Sunny,
   SwitchButton,
   Tickets,
   User,
@@ -26,12 +28,14 @@ import BrandLogo from './BrandLogo.vue'
 import LoginSessionsDialog from './LoginSessionsDialog.vue'
 import MfaSettingsDialog from './MfaSettingsDialog.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore, type ThemeMode } from '@/stores/theme'
 import { authApi, systemApi } from '@/api'
 import { ApiError } from '@/api/http'
 import type { SpaceRole } from '@/api/types'
 import { PASSWORD_PATTERN, PASSWORD_RULE_MESSAGE } from '@/utils/password'
 
 const auth = useAuthStore()
+const theme = useThemeStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -120,6 +124,17 @@ const visibleGroups = computed(() =>
 
 const pageTitle = computed(() => (route.meta.title as string) || '控制台')
 const avatarText = computed(() => auth.displayName.slice(0, 1).toUpperCase())
+
+const themeIcon = computed(() =>
+  theme.mode === 'light' ? Sunny : theme.mode === 'dark' ? Moon : Monitor,
+)
+const themeLabel = computed(
+  () => ({ light: '浅色模式', dark: '深色模式', system: '跟随系统' })[theme.mode],
+)
+
+function handleThemeCommand(mode: ThemeMode) {
+  theme.setMode(mode)
+}
 
 async function checkHealth() {
   try {
@@ -300,6 +315,27 @@ onBeforeUnmount(() => {
             <span class="status-dot" :class="{ off: !online }"></span>
             <span class="health-text">{{ online ? '在线' : '离线' }}</span>
           </div>
+          <el-dropdown trigger="click" @command="handleThemeCommand">
+            <button class="theme-btn" type="button" :title="themeLabel">
+              <el-icon><component :is="themeIcon" /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="light">
+                  <el-icon><Sunny /></el-icon>
+                  浅色
+                </el-dropdown-item>
+                <el-dropdown-item command="dark">
+                  <el-icon><Moon /></el-icon>
+                  深色
+                </el-dropdown-item>
+                <el-dropdown-item command="system">
+                  <el-icon><Monitor /></el-icon>
+                  跟随系统
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-dropdown trigger="click" @command="handleUserCommand">
             <button class="top-avatar" type="button" :title="auth.displayName">
               {{ avatarText }}
@@ -447,14 +483,14 @@ onBeforeUnmount(() => {
   padding: 0 12px;
   margin: 2px 0;
   border-radius: 11px;
-  color: #929dbb;
+  color: var(--k-dim);
   font-size: 13px;
   font-weight: 520;
   transition: background 0.18s ease, color 0.18s ease;
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--k-fill);
   color: var(--king-text);
 }
 
@@ -472,7 +508,7 @@ onBeforeUnmount(() => {
 }
 
 .nav-item.active .nav-icon {
-  color: #c4b5fd;
+  color: var(--k-violet);
 }
 
 .nav-glow {
@@ -520,7 +556,7 @@ onBeforeUnmount(() => {
   padding: 9px 10px;
   border-radius: 12px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--k-fill-soft);
   color: var(--king-text);
   cursor: pointer;
   text-align: left;
@@ -528,7 +564,7 @@ onBeforeUnmount(() => {
 }
 
 .user-card:hover {
-  background: rgba(255, 255, 255, 0.065);
+  background: var(--k-hover);
 }
 
 .avatar,
@@ -603,7 +639,27 @@ onBeforeUnmount(() => {
   height: 34px;
   border-radius: 9px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--k-fill);
+  color: var(--king-text);
+}
+
+.theme-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--king-line);
+  background: var(--k-fill);
+  color: var(--king-text-soft);
+  font-size: 16px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.theme-btn:hover {
+  background: var(--k-hover);
   color: var(--king-text);
 }
 
@@ -644,13 +700,13 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(52, 211, 153, 0.18);
   background: rgba(52, 211, 153, 0.06);
   font-size: 11px;
-  color: #8ce9c4;
+  color: var(--k-green);
 }
 
 .health.off {
   border-color: rgba(251, 113, 133, 0.2);
   background: rgba(251, 113, 133, 0.07);
-  color: #ffabb7;
+  color: var(--k-red);
 }
 
 .top-avatar {
@@ -697,8 +753,43 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   background: rgba(251, 191, 36, 0.07);
   border: 1px solid rgba(251, 191, 36, 0.16);
-  color: #fcd88d;
+  color: var(--k-amber);
   font-size: 11.5px;
+}
+
+/* --- 浅色主题适配 --- */
+
+html.light .sidebar {
+  background: rgba(255, 255, 255, 0.88);
+  border-right-color: rgba(15, 23, 42, 0.08);
+}
+
+html.light .topbar {
+  background: rgba(255, 255, 255, 0.78);
+  border-bottom-color: rgba(15, 23, 42, 0.07);
+}
+
+html.light .nav-group-label {
+  color: #8a94ad;
+}
+
+html.light .nav-icon {
+  color: #64748b;
+}
+
+html.light .nav-item.active {
+  color: #4c1d95;
+  background: linear-gradient(100deg, rgba(124, 92, 255, 0.16), rgba(34, 211, 238, 0.08));
+  border-color: rgba(124, 92, 255, 0.28);
+}
+
+html.light .nav-item.active .nav-icon {
+  color: #6d28d9;
+}
+
+html.light .sidebar-mask {
+  background: var(--k-mask);
+  backdrop-filter: blur(3px);
 }
 
 @media (max-width: 960px) {

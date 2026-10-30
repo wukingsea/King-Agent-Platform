@@ -121,7 +121,7 @@ onMounted(load)
   background:
     radial-gradient(900px 500px at 12% -8%, rgba(124, 92, 255, 0.2), transparent 62%),
     radial-gradient(780px 480px at 92% 0%, rgba(56, 189, 248, 0.13), transparent 60%),
-    #060913;
+    var(--king-bg);
 }
 
 .public-aurora {
@@ -224,7 +224,7 @@ onMounted(load)
   place-items: center;
   font-size: 19px;
   font-weight: 650;
-  color: #f2edff;
+  color: var(--k-violet-soft);
   background: linear-gradient(135deg, #7c5cff, #38bdf8);
   box-shadow: 0 10px 26px -14px rgba(124, 92, 255, 0.9);
 }
@@ -323,7 +323,7 @@ onMounted(load)
   display: grid;
   place-items: center;
   font-size: 24px;
-  color: #fca5a5;
+  color: var(--k-red);
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid rgba(248, 113, 113, 0.24);
 }
@@ -332,7 +332,7 @@ onMounted(load)
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, #c4b5fd, #7c5cff 55%, #38bdf8);
+  background: radial-gradient(circle at 34% 30%, var(--k-violet), #7c5cff 55%, #38bdf8);
   box-shadow: 0 0 34px rgba(124, 92, 255, 0.6);
   animation: pulse-orb 1.6s ease-in-out infinite;
 }
@@ -373,5 +373,18 @@ onMounted(load)
   .public-foot {
     padding: 8px 16px 12px;
   }
+}
+
+/* --- 浅色主题适配 --- */
+html.light .public-topbar {
+  background: var(--king-panel);
+}
+
+html.light .console-wrap {
+  background: var(--king-panel);
+}
+
+html.light .state-card {
+  background: var(--king-panel);
 }
 </style>

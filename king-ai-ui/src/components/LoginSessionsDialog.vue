@@ -205,7 +205,7 @@ async function logoutAll() {
   border-radius: 999px;
   font-size: 10px;
   font-weight: 600;
-  color: #6ee7b7;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.12);
   border: 1px solid rgba(52, 211, 153, 0.3);
 }
@@ -217,5 +217,10 @@ async function logoutAll() {
   margin-top: 4px;
   font-size: 11px;
   color: var(--king-muted);
+}
+
+/* --- 浅色主题适配 --- */
+html.light .session-item {
+  background: var(--king-panel);
 }
 </style>

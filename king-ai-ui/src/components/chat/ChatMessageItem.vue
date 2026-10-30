@@ -212,7 +212,7 @@ function toolSummary(tool: ToolTraceItem): string {
   padding: 12px 16px;
   border-radius: 16px 16px 4px 16px;
   background: linear-gradient(135deg, rgba(124, 92, 255, 0.9), rgba(109, 107, 255, 0.75));
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--king-line-strong);
   color: #fff;
   font-size: 14px;
   line-height: 1.7;
@@ -239,8 +239,8 @@ function toolSummary(tool: ToolTraceItem): string {
 }
 
 .user-avatar {
-  color: #cfd8f5;
-  background: rgba(255, 255, 255, 0.07);
+  color: var(--k-dim);
+  background: var(--k-fill);
   border: 1px solid var(--king-line);
 }
 
@@ -285,27 +285,27 @@ function toolSummary(tool: ToolTraceItem): string {
   border-radius: 5px;
   font-size: 9.5px;
   font-weight: 550;
-  color: #9aa6c6;
-  background: rgba(255, 255, 255, 0.055);
+  color: var(--k-dim);
+  background: var(--k-fill);
 }
 
 .state.live {
-  color: #c4b5fd;
+  color: var(--k-violet);
   background: rgba(124, 92, 255, 0.12);
 }
 
 .state.success {
-  color: #7ee9bc;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.09);
 }
 
 .state.warning {
-  color: #fcd88d;
+  color: var(--k-amber);
   background: rgba(251, 191, 36, 0.09);
 }
 
 .state.danger {
-  color: #ffabb7;
+  color: var(--k-red);
   background: rgba(251, 113, 133, 0.1);
 }
 
@@ -347,7 +347,7 @@ function toolSummary(tool: ToolTraceItem): string {
   margin-bottom: 10px;
   border-radius: 10px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.022);
+  background: var(--k-fill-soft);
   overflow: hidden;
 }
 
@@ -385,7 +385,7 @@ function toolSummary(tool: ToolTraceItem): string {
   padding: 0 13px 12px;
   font-size: 12px;
   line-height: 1.75;
-  color: #8d99b9;
+  color: var(--k-dim);
   white-space: pre-wrap;
 }
 
@@ -420,7 +420,7 @@ function toolSummary(tool: ToolTraceItem): string {
 }
 
 .tool-icon {
-  color: #7de8f7;
+  color: var(--k-cyan);
   font-size: 15px;
 }
 
@@ -432,7 +432,7 @@ function toolSummary(tool: ToolTraceItem): string {
 .tool-name {
   font-family: var(--king-mono);
   font-size: 11.5px;
-  color: #cfe8f3;
+  color: var(--k-cyan-soft);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -451,12 +451,12 @@ function toolSummary(tool: ToolTraceItem): string {
   padding: 2px 7px;
   border-radius: 5px;
   font-size: 9px;
-  color: #7ee9bc;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.08);
 }
 
 .tool-state.fail {
-  color: #ffabb7;
+  color: var(--k-red);
   background: rgba(251, 113, 133, 0.1);
 }
 
@@ -495,7 +495,7 @@ function toolSummary(tool: ToolTraceItem): string {
   overflow: auto;
   border-radius: 7px;
   background: rgba(0, 0, 0, 0.24);
-  color: #a9b6d4;
+  color: var(--k-code-text);
   font-family: var(--king-mono);
   font-size: 10.5px;
   line-height: 1.55;
@@ -550,7 +550,7 @@ function toolSummary(tool: ToolTraceItem): string {
   margin-bottom: 8px;
   font-size: 10.5px;
   font-weight: 560;
-  color: #7de8f7;
+  color: var(--k-cyan);
 }
 
 .citation-count {
@@ -573,7 +573,7 @@ function toolSummary(tool: ToolTraceItem): string {
 .citation-card {
   border-radius: 9px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.022);
+  background: var(--k-fill-soft);
   overflow: hidden;
 }
 
@@ -593,13 +593,13 @@ function toolSummary(tool: ToolTraceItem): string {
 .citation-index {
   font-family: var(--king-mono);
   font-size: 9.5px;
-  color: #b7a6ff;
+  color: var(--k-violet);
 }
 
 .citation-name {
   flex: 1;
   font-size: 10.5px;
-  color: #9fabc9;
+  color: var(--k-dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -608,7 +608,7 @@ function toolSummary(tool: ToolTraceItem): string {
 .citation-score {
   font-family: var(--king-mono);
   font-size: 9px;
-  color: #6fdbe9;
+  color: var(--k-cyan);
 }
 
 .citation-body {
@@ -625,7 +625,7 @@ function toolSummary(tool: ToolTraceItem): string {
   margin: 0;
   font-size: 10.5px;
   line-height: 1.65;
-  color: #8390af;
+  color: var(--k-dim);
   max-height: 140px;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -644,13 +644,13 @@ function toolSummary(tool: ToolTraceItem): string {
 }
 
 .error-box {
-  color: #ffb3be;
+  color: var(--k-red);
   background: rgba(251, 113, 133, 0.07);
   border: 1px solid rgba(251, 113, 133, 0.18);
 }
 
 .interrupted-box {
-  color: #fcd88d;
+  color: var(--k-amber);
   background: rgba(251, 191, 36, 0.06);
   border: 1px solid rgba(251, 191, 36, 0.16);
 }
@@ -663,7 +663,7 @@ function toolSummary(tool: ToolTraceItem): string {
   padding: 8px 11px;
   border-radius: 9px;
   font-size: 10.5px;
-  color: #a9b6d6;
+  color: var(--k-dim);
   background: rgba(124, 92, 255, 0.06);
   border: 1px solid rgba(124, 92, 255, 0.16);
 }

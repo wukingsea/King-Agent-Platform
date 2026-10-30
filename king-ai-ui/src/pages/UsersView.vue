@@ -460,13 +460,13 @@ onMounted(async () => {
   place-items: center;
   font-size: 14px;
   font-weight: 600;
-  color: #cfc4ff;
+  color: var(--k-violet-soft);
   background: linear-gradient(135deg, rgba(124, 92, 255, 0.28), rgba(56, 189, 248, 0.12));
   border: 1px solid rgba(124, 92, 255, 0.3);
 }
 
 .avatar.admin {
-  color: #ffe3a3;
+  color: var(--k-amber);
   background: linear-gradient(135deg, rgba(250, 204, 21, 0.22), rgba(124, 92, 255, 0.14));
   border-color: rgba(250, 204, 21, 0.32);
 }
@@ -491,7 +491,7 @@ onMounted(async () => {
   padding: 1px 6px;
   border-radius: 999px;
   background: rgba(56, 189, 248, 0.14);
-  color: #7dd3fc;
+  color: var(--k-sky);
 }
 
 .role-pill {
@@ -504,13 +504,13 @@ onMounted(async () => {
 .role-pill.admin {
   background: rgba(250, 204, 21, 0.12);
   border: 1px solid rgba(250, 204, 21, 0.28);
-  color: #fcd34d;
+  color: var(--k-amber);
 }
 
 .role-pill.user {
   background: rgba(124, 92, 255, 0.12);
   border: 1px solid rgba(124, 92, 255, 0.26);
-  color: #c4b5fd;
+  color: var(--k-violet);
 }
 
 .space-tags {
@@ -548,7 +548,7 @@ onMounted(async () => {
 }
 
 .status-dot.on {
-  color: #6ee7b7;
+  color: var(--k-green);
 }
 
 .status-dot.on::before {

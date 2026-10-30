@@ -294,8 +294,8 @@ function fillDemo() {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.024) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px);
+    linear-gradient(var(--k-fill-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--k-fill-soft) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(circle at 34% 40%, #000 0%, transparent 68%);
   pointer-events: none;
@@ -358,7 +358,7 @@ function fillDemo() {
   padding: 5px 11px;
   border-radius: 999px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--k-fill-soft);
   font-size: 10px;
   letter-spacing: 0.12em;
   color: var(--king-muted);
@@ -392,7 +392,7 @@ function fillDemo() {
   border-radius: 999px;
   border: 1px solid rgba(124, 92, 255, 0.3);
   background: rgba(124, 92, 255, 0.1);
-  color: #c8bcff;
+  color: var(--k-violet-soft);
   font-size: 11px;
   letter-spacing: 0.04em;
 }
@@ -483,7 +483,7 @@ function fillDemo() {
   font-size: 15px;
   font-weight: 600;
   letter-spacing: 0.06em;
-  color: #cfc6ff;
+  color: var(--k-violet-soft);
 }
 
 .mini-stat span {
@@ -507,7 +507,7 @@ function fillDemo() {
   border-radius: 26px;
   border: 1px solid var(--king-line-strong);
   background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.045), transparent 42%),
+    linear-gradient(160deg, var(--k-fill), transparent 42%),
     rgba(12, 17, 33, 0.82);
   box-shadow: 0 40px 100px rgba(2, 4, 12, 0.55);
   backdrop-filter: blur(26px);
@@ -581,7 +581,7 @@ function fillDemo() {
   border-radius: 10px;
   border: 1px solid rgba(248, 113, 113, 0.28);
   background: rgba(248, 113, 113, 0.09);
-  color: #fca5a5;
+  color: var(--k-red);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -594,7 +594,7 @@ function fillDemo() {
   gap: 8px;
   border-color: rgba(124, 92, 255, 0.36);
   background: rgba(124, 92, 255, 0.1);
-  color: #cfc6ff;
+  color: var(--k-violet-soft);
 }
 
 .sso-btn:hover {
@@ -611,8 +611,8 @@ function fillDemo() {
   margin-top: 22px;
   padding: 12px 14px;
   border-radius: 12px;
-  border: 1px dashed rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.025);
+  border: 1px dashed var(--king-line-strong);
+  background: var(--k-fill-soft);
 }
 
 .demo-copy {
@@ -691,5 +691,14 @@ function fillDemo() {
   .edition {
     display: none;
   }
+}
+
+/* --- 浅色主题适配 --- */
+html.light .auth-card {
+  background: var(--king-panel);
+}
+
+html.light .sso-btn:hover {
+  color: var(--k-violet-soft);
 }
 </style>

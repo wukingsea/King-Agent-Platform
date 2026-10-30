@@ -221,13 +221,13 @@ onMounted(load)
   height: 48px;
   border-radius: 14px;
   font-size: 22px;
-  color: #6ee7b7;
+  color: var(--k-green);
   background: linear-gradient(135deg, rgba(52, 211, 153, 0.18), rgba(34, 211, 238, 0.1));
   border: 1px solid rgba(52, 211, 153, 0.3);
 }
 
 .license-mark.expired {
-  color: #fca5a5;
+  color: var(--k-red);
   background: rgba(248, 113, 113, 0.1);
   border-color: rgba(248, 113, 113, 0.3);
 }
@@ -285,11 +285,11 @@ onMounted(load)
   font-family: var(--font-mono);
   font-size: 18px;
   font-weight: 620;
-  color: #8ce9c4;
+  color: var(--k-green);
 }
 
 .days-left.warn .days-value {
-  color: #fcd88d;
+  color: var(--k-amber);
 }
 
 .days-label {
@@ -346,7 +346,7 @@ onMounted(load)
   height: 34px;
   border-radius: 10px;
   font-size: 16px;
-  color: #b9a8ff;
+  color: var(--k-violet);
   background: rgba(124, 92, 255, 0.12);
   border: 1px solid rgba(124, 92, 255, 0.22);
 }
@@ -406,7 +406,7 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #b9a8ff;
+  color: var(--k-violet);
 }
 
 .feature-head h3 {
@@ -430,7 +430,7 @@ onMounted(load)
   background: rgba(124, 92, 255, 0.1);
   font-family: var(--font-mono);
   font-size: 11px;
-  color: #c4b5fd;
+  color: var(--k-violet);
 }
 
 .feature-empty {
@@ -447,7 +447,7 @@ onMounted(load)
 }
 
 .badge.active {
-  color: #6ee7b7;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.12);
   border: 1px solid rgba(52, 211, 153, 0.3);
 }
@@ -459,7 +459,7 @@ onMounted(load)
 }
 
 .badge.edition {
-  color: #c4b5fd;
+  color: var(--k-violet);
   background: rgba(124, 92, 255, 0.12);
   border: 1px solid rgba(124, 92, 255, 0.26);
 }

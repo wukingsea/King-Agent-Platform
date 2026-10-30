@@ -1265,7 +1265,7 @@ onBeforeUnmount(stopExportPolling)
 }
 
 .danger-text {
-  color: #ffabb7;
+  color: var(--k-red);
 }
 
 .pagination-row {
@@ -1282,7 +1282,7 @@ onBeforeUnmount(stopExportPolling)
   padding: 14px 16px;
   border-radius: 12px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--k-fill-soft);
 }
 
 .summary-item {
@@ -1329,7 +1329,7 @@ onBeforeUnmount(stopExportPolling)
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--k-fill-soft);
   font-size: 13px;
 }
 

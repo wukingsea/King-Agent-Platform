@@ -154,7 +154,7 @@ textarea {
   border-radius: 999px;
   font-size: 12px;
   color: var(--king-text-soft);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--k-fill);
   border: 1px solid var(--king-line);
   white-space: nowrap;
 }
@@ -172,19 +172,19 @@ textarea {
 }
 
 .pill.primary {
-  color: #cfc6ff;
+  color: var(--k-violet-soft);
   border-color: rgba(124, 92, 255, 0.35);
   background: rgba(124, 92, 255, 0.12);
 }
 
 .pill.cyan {
-  color: #b6f4ff;
+  color: var(--k-cyan-soft);
   border-color: rgba(34, 211, 238, 0.32);
   background: rgba(34, 211, 238, 0.1);
 }
 
 .pill.pink {
-  color: #ffd3e4;
+  color: var(--k-pink);
   border-color: rgba(255, 110, 169, 0.32);
   background: rgba(255, 110, 169, 0.1);
 }
@@ -206,7 +206,7 @@ textarea {
   width: 56px;
   height: 56px;
   border-radius: 18px;
-  color: #b7a6ff;
+  color: var(--k-violet);
   background: var(--king-gradient-soft);
   border: 1px solid rgba(124, 92, 255, 0.24);
 }
@@ -487,6 +487,124 @@ textarea {
 .el-tag--large {
   height: 28px;
   padding: 0 12px;
+}
+
+/* ---------------- 浅色主题 ---------------- */
+
+html.light body {
+  background:
+    radial-gradient(1100px 680px at 8% -8%, rgba(124, 92, 255, 0.1), transparent 62%),
+    radial-gradient(900px 620px at 108% 4%, rgba(34, 211, 238, 0.07), transparent 60%),
+    radial-gradient(800px 800px at 50% 115%, rgba(255, 110, 169, 0.05), transparent 60%),
+    var(--king-bg);
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18);
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(15, 23, 42, 0.3);
+}
+
+html.light ::selection {
+  background: rgba(124, 92, 255, 0.25);
+  color: #18213a;
+}
+
+html.light .scroll-thin {
+  scrollbar-color: rgba(15, 23, 42, 0.2) transparent;
+}
+
+html.light .panel {
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.08);
+}
+
+html.light .el-button {
+  --el-button-bg-color: #ffffff;
+  --el-button-hover-bg-color: #f3f4fa;
+  --el-button-active-bg-color: #ecedf5;
+}
+
+html.light .el-button--primary {
+  --el-button-hover-bg-color: #5b35f5;
+  box-shadow: 0 8px 22px rgba(124, 92, 255, 0.24);
+}
+
+html.light .el-button--success {
+  background: rgba(5, 150, 105, 0.1);
+  border-color: rgba(5, 150, 105, 0.32);
+  color: #047857;
+}
+
+html.light .el-button--danger {
+  background: rgba(225, 29, 72, 0.08);
+  border-color: rgba(225, 29, 72, 0.28);
+  color: #be123c;
+}
+
+html.light .el-input__wrapper,
+html.light .el-textarea__inner,
+html.light .el-select__wrapper {
+  background: #ffffff;
+}
+
+html.light .el-input__wrapper.is-focus,
+html.light .el-textarea__inner:focus,
+html.light .el-select__wrapper.is-focused {
+  background: #ffffff;
+}
+
+html.light .el-dialog {
+  background: #ffffff;
+}
+
+html.light .el-drawer {
+  background: #ffffff;
+}
+
+html.light .el-table {
+  --el-table-header-bg-color: rgba(15, 23, 42, 0.03);
+  --el-table-row-hover-bg-color: rgba(124, 92, 255, 0.06);
+}
+
+html.light .el-dropdown-menu,
+html.light .el-select-dropdown,
+html.light .el-popper.is-light {
+  background: #ffffff;
+}
+
+html.light .el-popper.is-light .el-popper__arrow::before {
+  background: #ffffff;
+}
+
+html.light .el-message {
+  background: #ffffff;
+}
+
+html.light .el-message-box {
+  background: #ffffff;
+}
+
+html.light .el-switch {
+  --el-switch-off-color: #cbd2e1;
+}
+
+html.light .el-slider {
+  --el-slider-runway-bg-color: rgba(15, 23, 42, 0.1);
+}
+
+html.light .el-loading-mask {
+  background: rgba(244, 246, 251, 0.7);
+}
+
+html.light .el-skeleton {
+  --el-skeleton-color: rgba(15, 23, 42, 0.06);
+  --el-skeleton-to-color: rgba(15, 23, 42, 0.1);
+}
+
+html.light .el-pagination {
+  --el-pagination-button-bg-color: rgba(15, 23, 42, 0.04);
 }
 
 @media (max-width: 768px) {

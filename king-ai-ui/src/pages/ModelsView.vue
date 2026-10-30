@@ -878,7 +878,7 @@ onMounted(loadAll)
   padding: 9px 16px;
   border-radius: 999px;
   border: 1px solid var(--border-subtle);
-  background: rgba(13, 18, 38, 0.6);
+  background: var(--king-bg-soft);
   color: var(--text-muted);
   font-size: 13px;
   cursor: pointer;
@@ -891,7 +891,7 @@ onMounted(loadAll)
 }
 
 .tab-pill.active {
-  color: #ece7ff;
+  color: var(--k-violet-soft);
   border-color: rgba(124, 92, 255, 0.55);
   background: linear-gradient(135deg, rgba(124, 92, 255, 0.24), rgba(56, 189, 248, 0.1));
   box-shadow: 0 8px 22px -14px rgba(124, 92, 255, 0.9);
@@ -907,7 +907,7 @@ onMounted(loadAll)
 
 .tab-pill.active .tab-count {
   background: rgba(124, 92, 255, 0.32);
-  color: #d9d0ff;
+  color: var(--k-violet-soft);
 }
 
 .supplier-wrap {
@@ -952,13 +952,13 @@ onMounted(loadAll)
   display: grid;
   place-items: center;
   font-size: 20px;
-  color: #8bd8f4;
+  color: var(--k-cyan-soft);
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(124, 92, 255, 0.16));
   border: 1px solid rgba(56, 189, 248, 0.28);
 }
 
 .supplier-icon.mock {
-  color: #f0d48a;
+  color: var(--k-amber);
   background: linear-gradient(135deg, rgba(250, 204, 21, 0.16), rgba(124, 92, 255, 0.1));
   border-color: rgba(250, 204, 21, 0.28);
 }
@@ -990,13 +990,13 @@ onMounted(loadAll)
   border-radius: 999px;
   background: rgba(56, 189, 248, 0.12);
   border: 1px solid rgba(56, 189, 248, 0.24);
-  color: #7dd3fc;
+  color: var(--k-sky);
 }
 
 .type-pill.vector {
   background: rgba(52, 211, 153, 0.12);
   border-color: rgba(52, 211, 153, 0.24);
-  color: #6ee7b7;
+  color: var(--k-green);
 }
 
 .supplier-remark {
@@ -1012,7 +1012,7 @@ onMounted(loadAll)
   gap: 8px;
   padding: 14px;
   border-radius: 12px;
-  background: rgba(9, 13, 28, 0.55);
+  background: var(--king-bg-soft);
   border: 1px solid var(--border-subtle);
 }
 
@@ -1111,7 +1111,7 @@ onMounted(loadAll)
 }
 
 .usage-hot {
-  color: #c4b5fd;
+  color: var(--k-violet);
   font-weight: 600;
 }
 
@@ -1130,7 +1130,7 @@ onMounted(loadAll)
 }
 
 .status-dot.on {
-  color: #6ee7b7;
+  color: var(--k-green);
 }
 
 .status-dot.on::before {
@@ -1189,13 +1189,13 @@ onMounted(loadAll)
 .test-status.ok {
   background: rgba(52, 211, 153, 0.1);
   border: 1px solid rgba(52, 211, 153, 0.28);
-  color: #6ee7b7;
+  color: var(--k-green);
 }
 
 .test-status.fail {
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid rgba(248, 113, 113, 0.28);
-  color: #fca5a5;
+  color: var(--k-red);
 }
 
 .discovered {
@@ -1235,13 +1235,13 @@ onMounted(loadAll)
   font-size: 11px;
   padding: 4px 9px;
   border-radius: 8px;
-  background: rgba(9, 13, 28, 0.6);
+  background: var(--king-bg-soft);
   border: 1px solid var(--border-subtle);
   color: var(--text-muted);
 }
 
 .model-chip.more {
-  color: #c4b5fd;
+  color: var(--k-violet);
 }
 
 @media (max-width: 720px) {

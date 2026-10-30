@@ -44,7 +44,7 @@ defineProps<{
 
 .stat-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(255, 255, 255, 0.14);
+  border-color: var(--king-line-strong);
 }
 
 .stat-top {
@@ -66,8 +66,8 @@ defineProps<{
   width: 30px;
   height: 30px;
   border-radius: 10px;
-  color: #d5ccff;
-  background: rgba(255, 255, 255, 0.055);
+  color: var(--k-violet-soft);
+  background: var(--k-fill);
   border: 1px solid var(--king-line);
   font-size: 15px;
 }
@@ -95,7 +95,7 @@ defineProps<{
 }
 
 .cyan .stat-icon {
-  color: #a5f3ff;
+  color: var(--k-cyan-soft);
 }
 
 .pink {
@@ -103,7 +103,7 @@ defineProps<{
 }
 
 .pink .stat-icon {
-  color: #ffc2da;
+  color: var(--k-pink);
 }
 
 .green {
@@ -111,7 +111,7 @@ defineProps<{
 }
 
 .green .stat-icon {
-  color: #a7f3d0;
+  color: var(--k-green);
 }
 
 .amber {
@@ -119,6 +119,6 @@ defineProps<{
 }
 
 .amber .stat-icon {
-  color: #fde68a;
+  color: var(--k-amber);
 }
 </style>

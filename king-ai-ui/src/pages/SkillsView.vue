@@ -845,7 +845,7 @@ onMounted(async () => {
   padding: 12px;
   border-radius: 14px;
   border: 1px solid transparent;
-  background: rgba(10, 14, 30, 0.5);
+  background: var(--k-code-bg);
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -871,7 +871,7 @@ onMounted(async () => {
   display: grid;
   place-items: center;
   background: rgba(124, 92, 255, 0.15);
-  color: #b9a8ff;
+  color: var(--k-violet);
   font-size: 17px;
 }
 
@@ -920,7 +920,7 @@ onMounted(async () => {
 
 .skill-status.on {
   background: rgba(52, 211, 153, 0.12);
-  color: #6ee7b7;
+  color: var(--k-green);
 }
 
 .skill-status.off {
@@ -963,7 +963,7 @@ onMounted(async () => {
   padding: 2px 8px;
   border-radius: 999px;
   background: rgba(56, 189, 248, 0.12);
-  color: #7dd3fc;
+  color: var(--k-sky);
   border: 1px solid rgba(56, 189, 248, 0.24);
 }
 
@@ -1001,7 +1001,7 @@ onMounted(async () => {
 .file-pane {
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
-  background: rgba(9, 13, 28, 0.5);
+  background: var(--k-code-bg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1070,7 +1070,7 @@ onMounted(async () => {
 
 .tree-item.active {
   background: rgba(124, 92, 255, 0.2);
-  color: #e9e3ff;
+  color: var(--k-violet-soft);
 }
 
 .tree-icon {
@@ -1080,7 +1080,7 @@ onMounted(async () => {
 }
 
 .tree-item.folder .tree-icon {
-  color: #7dd3fc;
+  color: var(--k-sky);
 }
 
 .tree-name {
@@ -1197,8 +1197,8 @@ onMounted(async () => {
   font-family: var(--font-mono);
   font-size: 13px !important;
   line-height: 1.72 !important;
-  background: rgba(6, 9, 20, 0.72) !important;
-  color: #d8e2ff !important;
+  background: var(--k-code-bg) !important;
+  color: var(--k-dim) !important;
   border-radius: 12px;
   padding: 16px !important;
   min-height: 380px !important;
@@ -1223,7 +1223,7 @@ onMounted(async () => {
   border-radius: 10px;
   background: rgba(56, 189, 248, 0.06);
   border: 1px dashed rgba(56, 189, 248, 0.22);
-  color: #8bd8f4;
+  color: var(--k-cyan-soft);
   font-size: 12px;
   line-height: 1.5;
 }

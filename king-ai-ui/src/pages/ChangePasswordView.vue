@@ -143,8 +143,8 @@ async function submit() {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.024) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.024) 1px, transparent 1px);
+    linear-gradient(var(--k-fill-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--k-fill-soft) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: radial-gradient(circle at 50% 40%, #000 0%, transparent 70%);
   pointer-events: none;
@@ -227,5 +227,10 @@ async function submit() {
   font-size: 11px;
   line-height: 1.6;
   color: var(--king-muted);
+}
+
+/* --- 浅色主题适配 --- */
+html.light .card {
+  background: var(--king-panel);
 }
 </style>

@@ -7,6 +7,25 @@
     <meta name="theme-color" content="#070a17" />
     <meta name="description" content="King AI · 智能体编排、RAG、MCP 工具与技能开放平台" />
     <title>King AI · 智能体平台</title>
+    <script>
+      // 首帧前根据持久化的主题模式设置 html class，避免浅色主题闪烁（FOUC）
+      // 存储键 king-ai-theme 与颜色 #070a17/#f4f6fb 须与 src/stores/theme.ts 保持一致
+      ;(function () {
+        try {
+          var mode = localStorage.getItem('king-ai-theme') || 'system'
+          var dark =
+            mode === 'dark' ||
+            (mode !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+          var root = document.documentElement
+          root.classList.remove('dark', 'light')
+          root.classList.add(dark ? 'dark' : 'light')
+          var meta = document.querySelector('meta[name="theme-color"]')
+          if (meta) meta.setAttribute('content', dark ? '#070a17' : '#f4f6fb')
+        } catch (error) {
+          /* 读取失败时保持默认深色 */
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="app"></div>

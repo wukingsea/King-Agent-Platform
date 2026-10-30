@@ -23,7 +23,7 @@ const uid = useId().replace(/:/g, '')
           <stop offset="1" stop-color="#22d3ee" />
         </linearGradient>
       </defs>
-      <rect x="1" y="1" width="62" height="62" rx="17" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)" />
+      <rect x="1" y="1" width="62" height="62" rx="17" class="mark-bg" />
       <path
         d="M15 41.5 L13 21.5 L24.5 30 L32 17.5 L39.5 30 L51 21.5 L49 41.5 Z"
         :fill="`url(#brand-${uid})`"
@@ -58,6 +58,25 @@ const uid = useId().replace(/:/g, '')
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+.mark-bg {
+  fill: rgba(255, 255, 255, 0.04);
+  stroke: rgba(255, 255, 255, 0.12);
+}
+
+/* --- 浅色主题适配 --- */
+
+html.light .name {
+  background: linear-gradient(100deg, #18213a 10%, #5b21b6 55%, #0369a1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+html.light .mark-bg {
+  fill: rgba(15, 23, 42, 0.03);
+  stroke: rgba(15, 23, 42, 0.12);
 }
 
 .tagline {

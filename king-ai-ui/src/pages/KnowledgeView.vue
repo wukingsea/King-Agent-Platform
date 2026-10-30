@@ -1062,7 +1062,7 @@ onBeforeUnmount(stopPolling)
 }
 
 .kb-item:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--k-fill-soft);
 }
 
 .kb-item.active {
@@ -1077,7 +1077,7 @@ onBeforeUnmount(stopPolling)
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  color: #c4b5fd;
+  color: var(--k-violet);
   background: rgba(124, 92, 255, 0.1);
   border: 1px solid rgba(124, 92, 255, 0.16);
   font-size: 14px;
@@ -1169,7 +1169,7 @@ onBeforeUnmount(stopPolling)
   height: 42px;
   border-radius: 12px;
   font-size: 18px;
-  color: #d8d0ff;
+  color: var(--k-violet-soft);
   background: linear-gradient(135deg, rgba(124, 92, 255, 0.25), rgba(34, 211, 238, 0.1));
   border: 1px solid rgba(124, 92, 255, 0.24);
 }
@@ -1199,13 +1199,13 @@ onBeforeUnmount(stopPolling)
 }
 
 .status-pill.on {
-  color: #8bf0c8;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.09);
 }
 
 .status-pill.off {
-  color: #9aa6c6;
-  background: rgba(255, 255, 255, 0.06);
+  color: var(--k-dim);
+  background: var(--k-fill);
 }
 
 .kb-title-wrap p {
@@ -1302,7 +1302,7 @@ onBeforeUnmount(stopPolling)
   width: 29px;
   height: 29px;
   border-radius: 8px;
-  color: #8ff1ff;
+  color: var(--k-cyan-soft);
   background: rgba(34, 211, 238, 0.06);
   border: 1px solid rgba(34, 211, 238, 0.12);
   font-size: 13px;
@@ -1349,7 +1349,7 @@ onBeforeUnmount(stopPolling)
 
 .acl-cell {
   font-size: 10px;
-  color: #9aa6c6;
+  color: var(--k-dim);
 }
 
 .doc-pagination {
@@ -1393,7 +1393,7 @@ onBeforeUnmount(stopPolling)
   padding: 14px;
   border-radius: 12px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.018);
+  background: var(--k-fill-soft);
 }
 
 .search-actions {
@@ -1431,7 +1431,7 @@ onBeforeUnmount(stopPolling)
   padding: 13px 15px;
   border-radius: 11px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--k-fill-soft);
 }
 
 .result-head {
@@ -1451,7 +1451,7 @@ onBeforeUnmount(stopPolling)
 }
 
 .result-doc .el-icon {
-  color: #8ff1ff;
+  color: var(--k-cyan-soft);
 }
 
 .result-chunk {
@@ -1463,13 +1463,13 @@ onBeforeUnmount(stopPolling)
 .result-score {
   font-family: var(--king-mono);
   font-size: 11px;
-  color: #8ff1ff;
+  color: var(--k-cyan-soft);
 }
 
 .score-track {
   height: 3px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--k-fill);
   overflow: hidden;
   margin-bottom: 9px;
 }
@@ -1485,7 +1485,7 @@ onBeforeUnmount(stopPolling)
   margin: 0;
   font-size: 11.5px;
   line-height: 1.75;
-  color: #8390af;
+  color: var(--k-dim);
   white-space: pre-wrap;
 }
 
@@ -1549,7 +1549,7 @@ onBeforeUnmount(stopPolling)
 .doc-preview {
   border-radius: 10px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--k-fill-soft);
   overflow: hidden;
 }
 
@@ -1575,14 +1575,14 @@ onBeforeUnmount(stopPolling)
   font-family: var(--king-mono);
   font-size: 10px;
   line-height: 1.7;
-  color: #8390af;
+  color: var(--k-code-text);
 }
 
 .chunk-card {
   padding: 13px 15px;
   border-radius: 10px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.018);
+  background: var(--k-fill-soft);
 }
 
 .chunk-card-head {
@@ -1599,7 +1599,7 @@ onBeforeUnmount(stopPolling)
   margin: 0;
   font-size: 11.5px;
   line-height: 1.78;
-  color: #8f9cb9;
+  color: var(--k-dim);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1672,5 +1672,10 @@ onBeforeUnmount(stopPolling)
     grid-template-columns: 1fr;
     gap: 0;
   }
+}
+
+/* --- 浅色主题适配 --- */
+html.light .config-item {
+  background: var(--king-bg-soft);
 }
 </style>

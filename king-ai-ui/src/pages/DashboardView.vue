@@ -372,8 +372,8 @@ onMounted(load)
   content: '';
   position: absolute;
   inset: 0;
-  background-image: linear-gradient(rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-image: linear-gradient(var(--k-fill-soft) 1px, transparent 1px),
+    linear-gradient(90deg, var(--k-fill-soft) 1px, transparent 1px);
   background-size: 44px 44px;
   mask-image: radial-gradient(circle at 84% 24%, #000, transparent 62%);
   pointer-events: none;
@@ -392,7 +392,7 @@ onMounted(load)
   padding: 5px 11px;
   border-radius: 999px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--k-fill-soft);
   font-size: 10.5px;
   color: var(--king-text-soft);
 }
@@ -455,7 +455,7 @@ onMounted(load)
 .orbit {
   position: absolute;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.075);
+  border: 1px solid var(--king-line);
 }
 
 .orbit-1 {
@@ -476,7 +476,7 @@ onMounted(load)
 .orbit-3 {
   width: 310px;
   height: 310px;
-  border-color: rgba(255, 255, 255, 0.055);
+  border-color: var(--king-line);
 }
 
 @keyframes ring {
@@ -516,12 +516,12 @@ onMounted(load)
   backdrop-filter: blur(10px);
   font-family: var(--king-mono);
   font-size: 9px;
-  color: #a9b6d4;
+  color: var(--k-dim);
   box-shadow: 0 10px 26px rgba(2, 4, 12, 0.3);
 }
 
 .satellite .el-icon {
-  color: #8ff1ff;
+  color: var(--k-cyan-soft);
 }
 
 .sat-a {
@@ -596,7 +596,7 @@ onMounted(load)
 }
 
 .feed-row:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--k-fill-soft);
 }
 
 .feed-row + .feed-row {
@@ -612,7 +612,7 @@ onMounted(load)
   border-radius: 9px;
   font-size: 12px;
   font-weight: 650;
-  color: #d8d0ff;
+  color: var(--k-violet-soft);
   background: rgba(124, 92, 255, 0.12);
   border: 1px solid rgba(124, 92, 255, 0.2);
 }
@@ -665,7 +665,7 @@ onMounted(load)
   gap: 4px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--k-fill-soft);
   border: 1px solid var(--king-line);
 }
 
@@ -726,13 +726,13 @@ onMounted(load)
   flex: none;
   font-family: var(--king-mono);
   font-size: 9.5px;
-  color: #8ff1ff;
+  color: var(--k-cyan-soft);
 }
 
 .usage-track {
   height: 4px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--k-fill);
   overflow: hidden;
 }
 
@@ -772,7 +772,7 @@ onMounted(load)
   padding: 14px;
   border-radius: 13px;
   border: 1px solid var(--king-line);
-  background: rgba(255, 255, 255, 0.022);
+  background: var(--k-fill-soft);
   color: inherit;
   cursor: pointer;
   text-align: left;
@@ -792,25 +792,25 @@ onMounted(load)
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  color: #cfc6ff;
+  color: var(--k-violet-soft);
   background: rgba(124, 92, 255, 0.12);
   border: 1px solid rgba(124, 92, 255, 0.2);
 }
 
 .quick-card.cyan .quick-icon {
-  color: #a5f3ff;
+  color: var(--k-cyan-soft);
   background: rgba(34, 211, 238, 0.08);
   border-color: rgba(34, 211, 238, 0.16);
 }
 
 .quick-card.pink .quick-icon {
-  color: #ffc2da;
+  color: var(--k-pink);
   background: rgba(255, 110, 169, 0.08);
   border-color: rgba(255, 110, 169, 0.16);
 }
 
 .quick-card.green .quick-icon {
-  color: #a7f3d0;
+  color: var(--k-green);
   background: rgba(52, 211, 153, 0.07);
   border-color: rgba(52, 211, 153, 0.16);
 }
@@ -901,5 +901,10 @@ onMounted(load)
   .footer-brand {
     display: none;
   }
+}
+
+/* --- 浅色主题适配 --- */
+html.light .satellite {
+  background: var(--king-bg-soft);
 }
 </style>

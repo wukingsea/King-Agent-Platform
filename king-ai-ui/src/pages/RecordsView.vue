@@ -420,7 +420,7 @@ onMounted(async () => {
   border-radius: 9px;
   font-size: 11px;
   font-weight: 650;
-  color: #d8d0ff;
+  color: var(--k-violet-soft);
   background: rgba(124, 92, 255, 0.12);
   border: 1px solid rgba(124, 92, 255, 0.18);
 }
@@ -474,12 +474,12 @@ onMounted(async () => {
 }
 
 .source-tag.admin {
-  color: #c4b5fd;
+  color: var(--k-violet);
   background: rgba(124, 92, 255, 0.1);
 }
 
 .source-tag.public {
-  color: #8ff1ff;
+  color: var(--k-cyan-soft);
   background: rgba(34, 211, 238, 0.08);
 }
 

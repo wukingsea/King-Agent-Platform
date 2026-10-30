@@ -36,7 +36,7 @@ const router = useRouter()
   text-align: center;
   background:
     radial-gradient(700px 400px at 50% -10%, rgba(124, 92, 255, 0.2), transparent 65%),
-    #060913;
+    var(--king-bg);
 }
 
 .orb {
@@ -46,7 +46,7 @@ const router = useRouter()
   display: grid;
   place-items: center;
   font-size: 34px;
-  color: #c4b5fd;
+  color: var(--k-violet);
   margin-bottom: 8px;
 }
 
