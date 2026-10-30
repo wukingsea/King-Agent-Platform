@@ -2,6 +2,7 @@ package com.king.ai.system;
 
 import com.king.ai.common.BizException;
 import com.king.ai.common.security.UserPrincipal;
+import com.king.ai.license.LicenseService;
 import com.king.ai.system.dto.SpaceCreateRequest;
 import com.king.ai.system.entity.Space;
 import com.king.ai.system.mapper.SpaceMapper;
@@ -33,6 +34,8 @@ class SpaceServiceSoftDeleteTest {
     private UserMapper userMapper;
     @Mock
     private JdbcTemplate jdbcTemplate;
+    @Mock
+    private LicenseService licenseService;
 
     @InjectMocks
     private SpaceService spaceService;

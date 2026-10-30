@@ -33,6 +33,11 @@ public class KingAiProperties {
     private Audit audit = new Audit();
     private Compliance compliance = new Compliance();
     private Finops finops = new Finops();
+    private Release release = new Release();
+    private Sso sso = new Sso();
+    private Mfa mfa = new Mfa();
+    private Ocr ocr = new Ocr();
+    private License license = new License();
 
     @Data
     public static class Chat {
@@ -221,5 +226,63 @@ public class KingAiProperties {
     public static class ModelPrice {
         private double inputPerMillion = 0;
         private double outputPerMillion = 0;
+    }
+
+    @Data
+    public static class Release {
+        /** When true the legacy direct publish endpoint is closed; versions must be approved. */
+        private boolean requireApproval = true;
+        /** Minimum weighted evaluation score required before approval. */
+        private double evalPassScore = 0.8;
+        private int maxEvalCases = 20;
+        private int evalMaxTokens = 512;
+    }
+
+    @Data
+    public static class Sso {
+        private boolean enabled = false;
+        private Oidc oidc = new Oidc();
+    }
+
+    @Data
+    public static class Oidc {
+        private String issuer = "";
+        private String clientId = "";
+        private String clientSecret = "";
+        private String redirectUri = "";
+        private List<String> scopes = new ArrayList<>(List.of("openid", "profile", "email"));
+        private String roleClaim = "roles";
+        private String defaultSpaceCode = "";
+        private String defaultRole = "VIEWER";
+        private boolean autoCreateUsers = true;
+        /** Frontend route that receives the session after the callback redirect. */
+        private String successRedirect = "/dashboard";
+    }
+
+    @Data
+    public static class Mfa {
+        private boolean enabled = true;
+        private String issuer = "King AI Platform";
+        private Duration challengeTtl = Duration.ofMinutes(5);
+        private int recoveryCodeCount = 8;
+    }
+
+    @Data
+    public static class Ocr {
+        private boolean enabled = false;
+        private String command = "tesseract";
+        private String languages = "chi_sim+eng";
+        private int maxPages = 30;
+        private int timeoutSeconds = 120;
+        private int minTextCharsPerPage = 50;
+        private int renderDpi = 200;
+    }
+
+    @Data
+    public static class License {
+        private boolean enabled = false;
+        private String file = "";
+        /** Base64 or PEM encoded Ed25519 public key. */
+        private String publicKey = "";
     }
 }

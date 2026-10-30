@@ -19,6 +19,9 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(
                         "/api/auth/login",
+                        "/api/auth/mfa/verify",
+                        "/api/auth/sso/config",
+                        "/api/auth/oidc/**",
                         "/api/public/**",
                         "/api/demo/**",
                         "/api/health"
@@ -27,6 +30,9 @@ public class WebConfig implements WebMvcConfigurer {
                 .addPathPatterns("/api/**")
                 .excludePathPatterns(
                         "/api/auth/login",
+                        "/api/auth/mfa/verify",
+                        "/api/auth/sso/config",
+                        "/api/auth/oidc/**",
                         "/api/public/**",
                         "/api/demo/**",
                         "/api/health"

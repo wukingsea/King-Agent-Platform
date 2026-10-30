@@ -48,7 +48,7 @@ public class PublicChatController {
                                                        HttpServletRequest request,
                                                        HttpServletResponse response) {
         String visitor = visitorTokenService.requireVisitor(request, response);
-        AgentRuntime agent = agentService.publishedRuntime(publicId);
+        AgentRuntime agent = agentService.publishedRuntime(publicId, visitor);
         return ApiResponse.ok(chatService.visitorSessions(agent.agentId(), visitor));
     }
 
@@ -58,7 +58,7 @@ public class PublicChatController {
                                                        HttpServletRequest request,
                                                        HttpServletResponse response) {
         String visitor = visitorTokenService.requireVisitor(request, response);
-        AgentRuntime agent = agentService.publishedRuntime(publicId);
+        AgentRuntime agent = agentService.publishedRuntime(publicId, visitor);
         return ApiResponse.ok(chatService.visitorMessages(agent.agentId(), visitor, sessionId));
     }
 
@@ -67,7 +67,7 @@ public class PublicChatController {
                            HttpServletRequest httpRequest,
                            HttpServletResponse httpResponse) {
         String visitor = visitorTokenService.requireVisitor(httpRequest, httpResponse);
-        AgentRuntime agent = agentService.publishedRuntime(request.publicId());
+        AgentRuntime agent = agentService.publishedRuntime(request.publicId(), visitor);
         int limit = properties.getPublicChat().getRateLimitPerMinute();
         // 访客 cookie 可被清空后重新签发，必须同时按 IP 记账，否则限流可被无限绕过。
         rateLimiter.check("ip|" + clientIpResolver.resolve(httpRequest), limit);

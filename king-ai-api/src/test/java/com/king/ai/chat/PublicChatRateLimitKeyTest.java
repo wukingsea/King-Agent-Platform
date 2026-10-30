@@ -32,7 +32,7 @@ class PublicChatRateLimitKeyTest {
         properties.getPublicChat().setRateLimitPerMinute(30);
 
         when(visitorTokenService.requireVisitor(any(), any())).thenReturn("visitor-1");
-        when(agentService.publishedRuntime("pub-1")).thenReturn(mock(AgentRuntime.class));
+        when(agentService.publishedRuntime("pub-1", "visitor-1")).thenReturn(mock(AgentRuntime.class));
         when(clientIpResolver.resolve(any())).thenReturn("198.51.100.23");
 
         PublicChatController controller = new PublicChatController(chatService, chatRuntime,

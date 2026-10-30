@@ -2,23 +2,34 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowRight, Lock, User } from '@element-plus/icons-vue'
+import { ArrowRight, Connection, Key, Lock, User } from '@element-plus/icons-vue'
 import BrandLogo from '@/components/BrandLogo.vue'
 import { useAuthStore } from '@/stores/auth'
-import { systemApi } from '@/api'
+import { authApi, systemApi } from '@/api'
 import { ApiError } from '@/api/http'
+import type { SsoConfig } from '@/api/types'
 
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 const demoEnabled = ref(false)
+const sso = ref<SsoConfig | null>(null)
+const ssoError = ref('')
+const mfaChallenge = ref<string | null>(null)
+const mfaCode = ref('')
+const submittingMfa = ref(false)
 
 onMounted(async () => {
-  try {
-    demoEnabled.value = (await systemApi.meta()).demoEnabled
-  } catch {
-    demoEnabled.value = false
+  if (typeof route.query.sso_error === 'string') {
+    ssoError.value = route.query.sso_error
   }
+  const [meta, ssoConfig] = await Promise.allSettled([
+    systemApi.meta(),
+    authApi.ssoConfig(),
+  ])
+  demoEnabled.value =
+    meta.status === 'fulfilled' ? meta.value.demoEnabled : false
+  sso.value = ssoConfig.status === 'fulfilled' ? ssoConfig.value : null
 })
 
 const formRef = ref<FormInstance>()
@@ -35,17 +46,60 @@ const features = [
   { title: '空间隔离', desc: '多租户空间、角色权限与加密密钥管理' },
 ]
 
+function completeLogin() {
+  ElMessage.success('登录成功，欢迎回来')
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
+  router.replace(redirect)
+}
+
 async function submit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
   try {
-    await auth.login({ username: form.username.trim(), password: form.password })
-    ElMessage.success('登录成功，欢迎回来')
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/dashboard'
-    router.replace(redirect)
+    const data = await auth.login({ username: form.username.trim(), password: form.password })
+    if (data.mfaRequired) {
+      mfaChallenge.value = data.mfaChallenge || null
+      mfaCode.value = ''
+      ElMessage.info('请输入身份验证器中的动态验证码')
+      return
+    }
+    completeLogin()
   } catch (error) {
     ElMessage.error(error instanceof ApiError ? error.message : '登录失败，请稍后重试')
   }
+}
+
+async function submitMfa() {
+  const challenge = mfaChallenge.value
+  const code = mfaCode.value.trim()
+  if (!challenge) return
+  if (!code) {
+    ElMessage.warning('请输入验证码或恢复码')
+    return
+  }
+  submittingMfa.value = true
+  try {
+    await auth.verifyMfa(challenge, code)
+    completeLogin()
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '验证失败，请稍后重试')
+  } finally {
+    submittingMfa.value = false
+  }
+}
+
+function backToPassword() {
+  mfaChallenge.value = null
+  mfaCode.value = ''
+  form.password = ''
+}
+
+function startSso() {
+  if (!sso.value?.loginUrl) {
+    ElMessage.warning('SSO 登录暂不可用，请联系管理员')
+    return
+  }
+  window.location.assign(sso.value.loginUrl)
 }
 
 function fillDemo() {
@@ -109,12 +163,20 @@ function fillDemo() {
     <section class="auth-wrap">
       <div class="auth-card">
         <div class="card-head">
-          <div class="card-eyebrow">WELCOME BACK</div>
-          <h2>登录 King AI</h2>
-          <p>使用平台账号进入智能体工作台</p>
+          <div class="card-eyebrow">{{ mfaChallenge ? 'TWO-FACTOR' : 'WELCOME BACK' }}</div>
+          <h2>{{ mfaChallenge ? '二次验证' : '登录 King AI' }}</h2>
+          <p>
+            {{ mfaChallenge ? '输入身份验证器中的 6 位动态验证码，或使用恢复码' : '使用平台账号进入智能体工作台' }}
+          </p>
+        </div>
+
+        <div v-if="ssoError" class="sso-error">
+          <el-icon><Key /></el-icon>
+          <span>{{ ssoError }}</span>
         </div>
 
         <el-form
+          v-if="!mfaChallenge"
           ref="formRef"
           :model="form"
           :rules="rules"
@@ -155,20 +217,60 @@ function fillDemo() {
           </el-button>
         </el-form>
 
-        <div v-if="demoEnabled" class="demo-box">
-          <div class="demo-copy">
-            <span class="demo-label">演示账号</span>
-            <span class="demo-value">admin / admin123</span>
-          </div>
-          <el-button text size="small" @click="fillDemo">一键填入</el-button>
-        </div>
+        <el-form v-else label-position="top" size="large" @keyup.enter="submitMfa">
+          <el-form-item label="验证码">
+            <el-input
+              v-model="mfaCode"
+              placeholder="6 位动态验证码或恢复码"
+              autocomplete="one-time-code"
+              maxlength="32"
+            >
+              <template #prefix>
+                <el-icon><Key /></el-icon>
+              </template>
+            </el-input>
+          </el-form-item>
+          <el-button
+            class="login-btn"
+            type="primary"
+            size="large"
+            :loading="submittingMfa"
+            @click="submitMfa"
+          >
+            验证并进入
+            <el-icon class="btn-arrow"><ArrowRight /></el-icon>
+          </el-button>
+          <el-button class="back-btn" text size="small" @click="backToPassword">
+            返回账号密码登录
+          </el-button>
+        </el-form>
 
-        <p v-if="demoEnabled" class="card-foot">
-          首次启动会自动创建演示空间、智能体、知识库与 MCP 服务。
-        </p>
-        <p v-else class="card-foot">
-          账号由平台管理员统一创建，如需访问请联系所在空间的管理员。
-        </p>
+        <template v-if="!mfaChallenge">
+          <el-button
+            v-if="sso?.enabled"
+            class="sso-btn"
+            size="large"
+            @click="startSso"
+          >
+            <el-icon><Connection /></el-icon>
+            使用企业 SSO 登录
+          </el-button>
+
+          <div v-if="demoEnabled" class="demo-box">
+            <div class="demo-copy">
+              <span class="demo-label">演示账号</span>
+              <span class="demo-value">admin / admin123</span>
+            </div>
+            <el-button text size="small" @click="fillDemo">一键填入</el-button>
+          </div>
+
+          <p v-if="demoEnabled" class="card-foot">
+            首次启动会自动创建演示空间、智能体、知识库与 MCP 服务。
+          </p>
+          <p v-else class="card-foot">
+            账号由平台管理员统一创建，如需访问请联系所在空间的管理员。
+          </p>
+        </template>
       </div>
 
       <p class="legal">King AI Platform · 开放智能体平台 · v1.0.0</p>
@@ -462,6 +564,43 @@ function fillDemo() {
 
 .btn-arrow {
   margin-left: 8px;
+}
+
+.back-btn {
+  width: 100%;
+  margin: 10px 0 0;
+  color: var(--king-muted);
+}
+
+.sso-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  background: rgba(248, 113, 113, 0.09);
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.sso-btn {
+  width: 100%;
+  height: 44px;
+  margin-top: 18px;
+  border-radius: 12px;
+  gap: 8px;
+  border-color: rgba(124, 92, 255, 0.36);
+  background: rgba(124, 92, 255, 0.1);
+  color: #cfc6ff;
+}
+
+.sso-btn:hover {
+  border-color: rgba(124, 92, 255, 0.6);
+  background: rgba(124, 92, 255, 0.18);
+  color: #fff;
 }
 
 .demo-box {

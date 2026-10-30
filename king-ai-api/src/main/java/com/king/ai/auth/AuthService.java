@@ -4,9 +4,11 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.king.ai.auth.dto.AuthResponse;
 import com.king.ai.auth.dto.ChangePasswordRequest;
 import com.king.ai.auth.dto.LoginRequest;
+import com.king.ai.auth.dto.MfaVerifyRequest;
 import com.king.ai.common.BizException;
 import com.king.ai.common.Ids;
 import com.king.ai.common.OptimisticLocks;
+import com.king.ai.common.Texts;
 import com.king.ai.common.security.RequestContext;
 import com.king.ai.common.security.UserPrincipal;
 import com.king.ai.config.KingAiProperties;
@@ -33,6 +35,8 @@ public class AuthService {
     private final TokenStore tokenStore;
     private final LoginAttemptGuard attemptGuard;
     private final KingAiProperties properties;
+    private final MfaChallengeService mfaChallengeService;
+    private final MfaService mfaService;
 
     public AuthResponse login(LoginRequest request, String clientIp) {
         String username = request.username().trim().toLowerCase();
@@ -46,6 +50,17 @@ public class AuthService {
             throw BizException.forbidden("账号已停用，请联系管理员");
         }
         attemptGuard.success(username, clientIp);
+        if (mfaRequired(user)) {
+            return new AuthResponse(null, null, List.of(), null, true, mfaChallengeService.issue(user.getId()));
+        }
+        return completeLogin(user);
+    }
+
+    /**
+     * Completes a login after the password (and, when enabled, the second factor) has been
+     * verified. Shared with the OIDC callback so both flows issue identical sessions.
+     */
+    public AuthResponse completeLogin(User user) {
         try {
             userMapper.update(null, new LambdaUpdateWrapper<User>()
                     .eq(User::getId, user.getId())
@@ -64,6 +79,27 @@ public class AuthService {
         return new AuthResponse(token, userService.view(user), spaces, currentSpaceId);
     }
 
+    public AuthResponse verifyMfa(MfaVerifyRequest request, String clientIp) {
+        Long userId = mfaChallengeService.verify(request.challenge());
+        User user = userService.require(userId);
+        if (user.getStatus() != null && user.getStatus() != 0) {
+            throw BizException.forbidden("账号已停用，请联系管理员");
+        }
+        if (!mfaRequired(user)) {
+            throw BizException.badRequest("该账号未启用二次验证，请直接登录");
+        }
+        if (!mfaService.verifyForLogin(user, request.code())) {
+            attemptGuard.fail(user.getUsername(), clientIp);
+            throw BizException.unauthorized("验证码不正确");
+        }
+        attemptGuard.success(user.getUsername(), clientIp);
+        return completeLogin(user);
+    }
+
+    private boolean mfaRequired(User user) {
+        return properties.getMfa().isEnabled() && user.getMfaEnabled() != null && user.getMfaEnabled() == 1;
+    }
+
     public AuthResponse me() {
         UserPrincipal principal = RequestContext.require();
         User user = userService.require(principal.id());
@@ -72,7 +108,7 @@ public class AuthService {
     }
 
     public void logout(String token) {
-        if (!com.king.ai.common.Texts.isBlank(token)) {
+        if (!Texts.isBlank(token)) {
             tokenStore.delete(token);
         }
     }

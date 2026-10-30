@@ -89,6 +89,41 @@ king-ai:
     access-review:
       cron: ${KING_AI_ACCESS_REVIEW_CRON:0 0 4 1 1,4,7,10 *}
       stale-days: ${KING_AI_ACCESS_STALE_DAYS:90}
+  release:
+    require-approval: ${KING_AI_RELEASE_REQUIRE_APPROVAL:true}
+    eval-pass-score: ${KING_AI_RELEASE_EVAL_PASS_SCORE:0.8}
+    max-eval-cases: ${KING_AI_RELEASE_MAX_EVAL_CASES:20}
+    eval-max-tokens: ${KING_AI_RELEASE_EVAL_MAX_TOKENS:512}
+  sso:
+    enabled: ${KING_AI_SSO_ENABLED:false}
+    oidc:
+      issuer: ${KING_AI_OIDC_ISSUER:}
+      client-id: ${KING_AI_OIDC_CLIENT_ID:}
+      client-secret: ${KING_AI_OIDC_CLIENT_SECRET:}
+      redirect-uri: ${KING_AI_OIDC_REDIRECT_URI:}
+      scopes: ${KING_AI_OIDC_SCOPES:openid,profile,email}
+      role-claim: ${KING_AI_OIDC_ROLE_CLAIM:roles}
+      default-space-code: ${KING_AI_OIDC_DEFAULT_SPACE_CODE:}
+      default-role: ${KING_AI_OIDC_DEFAULT_ROLE:VIEWER}
+      auto-create-users: ${KING_AI_OIDC_AUTO_CREATE_USERS:true}
+      success-redirect: ${KING_AI_OIDC_SUCCESS_REDIRECT:/dashboard}
+  mfa:
+    enabled: ${KING_AI_MFA_ENABLED:true}
+    issuer: ${KING_AI_MFA_ISSUER:King AI Platform}
+    challenge-ttl: ${KING_AI_MFA_CHALLENGE_TTL:5m}
+    recovery-code-count: ${KING_AI_MFA_RECOVERY_CODE_COUNT:8}
+  ocr:
+    enabled: ${KING_AI_OCR_ENABLED:false}
+    command: ${KING_AI_OCR_COMMAND:tesseract}
+    languages: ${KING_AI_OCR_LANGUAGES:chi_sim+eng}
+    max-pages: ${KING_AI_OCR_MAX_PAGES:30}
+    timeout-seconds: ${KING_AI_OCR_TIMEOUT_SECONDS:120}
+    min-text-chars-per-page: ${KING_AI_OCR_MIN_TEXT_CHARS_PER_PAGE:50}
+    render-dpi: ${KING_AI_OCR_RENDER_DPI:200}
+  license:
+    enabled: ${KING_AI_LICENSE_ENABLED:false}
+    file: ${KING_AI_LICENSE_FILE:}
+    public-key: ${KING_AI_LICENSE_PUBLIC_KEY:}
   chat:
     max-history-messages: 20
     max-history-chars: 24000

@@ -17,7 +17,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import { mcpApi } from '@/api'
 import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
-import type { McpSaveRequest, McpTestResult, McpView } from '@/api/types'
+import type { McpAuthType, McpSaveRequest, McpTestResult, McpView } from '@/api/types'
 import { fromNow } from '@/utils/format'
 
 const auth = useAuthStore()
@@ -42,6 +42,12 @@ interface McpForm {
   headers: string
   clearHeaders: boolean
   headersConfigured: boolean
+  authType: McpAuthType
+  oauthTokenUrl: string
+  oauthClientId: string
+  oauthClientSecret: string
+  oauthScopes: string
+  clientSecretConfigured: boolean
   status: number
   remark: string
 }
@@ -53,6 +59,12 @@ const form = reactive<McpForm>({
   headers: '',
   clearHeaders: false,
   headersConfigured: false,
+  authType: 'NONE',
+  oauthTokenUrl: '',
+  oauthClientId: '',
+  oauthClientSecret: '',
+  oauthScopes: '',
+  clientSecretConfigured: false,
   status: 0,
   remark: '',
 })
@@ -73,6 +85,22 @@ const enabledCount = computed(() => servers.value.filter((item) => item.status =
 const toolAgentCount = computed(() =>
   servers.value.reduce((total, item) => total + (item.agentCount || 0), 0),
 )
+const oauthCount = computed(
+  () => servers.value.filter((item) => item.authType === 'OAUTH2').length,
+)
+
+function tokenLabel(server: McpView): string {
+  if (!server.tokenObtained) return '待获取令牌'
+  if (!server.oauthExpiresAt) return '令牌已获取'
+  const expires = new Date(server.oauthExpiresAt).getTime()
+  if (Number.isNaN(expires)) return '令牌已获取'
+  const minutes = Math.round((expires - Date.now()) / 60000)
+  if (minutes <= 0) return '令牌已过期'
+  if (minutes < 60) return `${minutes} 分钟后过期`
+  const hours = Math.round(minutes / 60)
+  if (hours < 48) return `${hours} 小时后过期`
+  return `${Math.round(hours / 24)} 天后过期`
+}
 
 function resetForm() {
   editingId.value = null
@@ -83,6 +111,12 @@ function resetForm() {
     headers: '',
     clearHeaders: false,
     headersConfigured: false,
+    authType: 'NONE',
+    oauthTokenUrl: '',
+    oauthClientId: '',
+    oauthClientSecret: '',
+    oauthScopes: '',
+    clientSecretConfigured: false,
     status: 0,
     remark: '',
   })
@@ -114,6 +148,12 @@ function openEdit(server: McpView) {
     headers: '',
     clearHeaders: false,
     headersConfigured: server.headersConfigured,
+    authType: server.authType === 'OAUTH2' ? 'OAUTH2' : 'NONE',
+    oauthTokenUrl: server.oauthTokenUrl || '',
+    oauthClientId: server.oauthClientId || '',
+    oauthClientSecret: '',
+    oauthScopes: server.oauthScopes || '',
+    clientSecretConfigured: server.clientSecretConfigured || false,
     status: server.status,
     remark: server.remark || '',
   })
@@ -123,6 +163,20 @@ function openEdit(server: McpView) {
 async function submit() {
   const valid = await formRef.value?.validate().catch(() => false)
   if (!valid) return
+  if (form.authType === 'OAUTH2') {
+    if (!form.oauthTokenUrl.trim()) {
+      ElMessage.warning('请输入 OAuth Token 地址')
+      return
+    }
+    if (!form.oauthClientId.trim()) {
+      ElMessage.warning('请输入 OAuth Client ID')
+      return
+    }
+    if (!form.clientSecretConfigured && !form.oauthClientSecret.trim()) {
+      ElMessage.warning('请输入 OAuth Client Secret')
+      return
+    }
+  }
   saving.value = true
   const headers = form.clearHeaders ? '' : form.headers.trim() || undefined
   const payload: McpSaveRequest = {
@@ -130,6 +184,14 @@ async function submit() {
     transport: form.transport,
     url: form.url.trim(),
     headers,
+    authType: form.authType,
+    oauthTokenUrl: form.authType === 'OAUTH2' ? form.oauthTokenUrl.trim() : undefined,
+    oauthClientId: form.authType === 'OAUTH2' ? form.oauthClientId.trim() : undefined,
+    oauthClientSecret:
+      form.authType === 'OAUTH2' && form.oauthClientSecret.trim()
+        ? form.oauthClientSecret.trim()
+        : undefined,
+    oauthScopes: form.authType === 'OAUTH2' ? form.oauthScopes.trim() : undefined,
     status: form.status,
     remark: form.remark.trim(),
   }
@@ -218,6 +280,10 @@ onMounted(loadServers)
         <span class="chip-dot muted"></span>
         {{ toolAgentCount }} 个智能体引用
       </div>
+      <div v-if="oauthCount" class="summary-chip">
+        <span class="chip-dot"></span>
+        {{ oauthCount }} 个 OAuth 2.0
+      </div>
       <div class="summary-spacer"></div>
       <div class="search-box">
         <el-input
@@ -259,6 +325,12 @@ onMounted(loadServers)
           <div class="server-meta">
             <span class="meta-pill">{{ server.transport || 'STREAMABLE_HTTP' }}</span>
             <span class="meta-pill muted">{{ server.agentCount || 0 }} 个智能体绑定</span>
+            <template v-if="server.authType === 'OAUTH2'">
+              <span class="meta-pill">OAuth 2.0</span>
+              <span class="meta-pill muted" :class="{ warn: !server.tokenObtained }">
+                {{ tokenLabel(server) }}
+              </span>
+            </template>
             <span class="meta-time">{{ fromNow(server.createdAt) }}</span>
           </div>
 
@@ -318,6 +390,48 @@ onMounted(loadServers)
             平台通过 JSON-RPC 2.0 执行 initialize / tools/list / tools/call。
           </div>
         </el-form-item>
+        <el-form-item label="认证方式">
+          <el-select v-model="form.authType" style="width: 100%">
+            <el-option label="无需认证" value="NONE" />
+            <el-option label="OAuth 2.0（客户端凭证）" value="OAUTH2" />
+          </el-select>
+          <div class="form-hint">
+            OAuth 2.0 模式下平台使用客户端凭证换取访问令牌，并在过期前自动刷新。
+          </div>
+        </el-form-item>
+        <template v-if="form.authType === 'OAUTH2'">
+          <el-form-item label="Token 地址">
+            <el-input
+              v-model="form.oauthTokenUrl"
+              placeholder="https://idp.example.com/oauth/token"
+              class="mono-input"
+            />
+          </el-form-item>
+          <el-form-item label="Client ID">
+            <el-input v-model="form.oauthClientId" maxlength="200" placeholder="OAuth Client ID" />
+          </el-form-item>
+          <el-form-item label="Client Secret">
+            <el-input
+              v-model="form.oauthClientSecret"
+              type="password"
+              show-password
+              maxlength="1000"
+              :placeholder="
+                form.clientSecretConfigured ? '已保存，留空表示保留原值' : 'OAuth Client Secret'
+              "
+            />
+            <div v-if="form.clientSecretConfigured" class="form-hint">
+              已保存的 Client Secret 已加密，填写新值将整体替换。
+            </div>
+          </el-form-item>
+          <el-form-item label="Scopes">
+            <el-input
+              v-model="form.oauthScopes"
+              maxlength="500"
+              placeholder="多个 scope 用空格分隔，例如 mcp.read mcp.write"
+            />
+          </el-form-item>
+        </template>
         <el-form-item label="自定义请求头">
           <el-input
             v-model="form.headers"
@@ -505,6 +619,12 @@ onMounted(loadServers)
   border-color: rgba(148, 163, 184, 0.2);
   color: var(--text-muted);
   font-family: inherit;
+}
+
+.meta-pill.warn {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.24);
+  color: #fcd88d;
 }
 
 .meta-time {

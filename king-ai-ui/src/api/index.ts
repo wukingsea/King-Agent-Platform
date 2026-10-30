@@ -4,6 +4,8 @@ import type {
   AccessReviewDecisionRequest,
   AccessReviewItemView,
   AccessReviewView,
+  AgentEvalCaseSaveRequest,
+  AgentEvalCaseView,
   AgentOption,
   AgentSaveRequest,
   AgentVersionView,
@@ -21,6 +23,10 @@ import type {
   HealthStatus,
   LegalHoldCreate,
   LegalHoldView,
+  LicenseStatusView,
+  MfaEnableResponse,
+  MfaSetupResponse,
+  MfaStatusView,
   RetentionPolicyUpdate,
   RetentionPolicyView,
   KnowledgeBaseSaveRequest,
@@ -48,6 +54,7 @@ import type {
   SkillFileView,
   SkillSaveRequest,
   SkillView,
+  SsoConfig,
   SpaceCreateRequest,
   SpaceMemberUpdate,
   SpaceMemberView,
@@ -66,10 +73,36 @@ import type {
 export const authApi = {
   login: (data: LoginRequest) =>
     request<AuthResponse>({ url: '/auth/login', method: 'post', data }),
+  verifyMfa: (challenge: string, code: string) =>
+    request<AuthResponse>({
+      url: '/auth/mfa/verify',
+      method: 'post',
+      data: { challenge, code },
+    }),
   logout: () => request<void>({ url: '/auth/logout', method: 'post' }),
   me: () => request<AuthResponse>({ url: '/auth/me', method: 'get' }),
   changePassword: (data: ChangePasswordRequest) =>
     request<void>({ url: '/auth/password', method: 'put', data }),
+  ssoConfig: () => request<SsoConfig>({ url: '/auth/sso/config', method: 'get' }),
+  mfaStatus: () => request<MfaStatusView>({ url: '/auth/mfa', method: 'get' }),
+  setupMfa: (password: string) =>
+    request<MfaSetupResponse>({
+      url: '/auth/mfa/setup',
+      method: 'post',
+      data: { password },
+    }),
+  enableMfa: (code: string) =>
+    request<MfaEnableResponse>({
+      url: '/auth/mfa/enable',
+      method: 'post',
+      data: { code },
+    }),
+  disableMfa: (password: string, code: string) =>
+    request<void>({
+      url: '/auth/mfa/disable',
+      method: 'post',
+      data: { password, code },
+    }),
 }
 
 export const workspaceApi = {
@@ -100,6 +133,64 @@ export const agentApi = {
     }),
   publicInfo: (publicId: string) =>
     request<PublicAgentView>({ url: `/public/agents/${publicId}`, method: 'get' }),
+}
+
+export const agentReleaseApi = {
+  evalCases: (agentId: number) =>
+    request<AgentEvalCaseView[]>({
+      url: `/agents/${agentId}/release/eval-cases`,
+      method: 'get',
+    }),
+  createEvalCase: (agentId: number, data: AgentEvalCaseSaveRequest) =>
+    request<AgentEvalCaseView>({
+      url: `/agents/${agentId}/release/eval-cases`,
+      method: 'post',
+      data,
+    }),
+  updateEvalCase: (agentId: number, caseId: number, data: AgentEvalCaseSaveRequest) =>
+    request<AgentEvalCaseView>({
+      url: `/agents/${agentId}/release/eval-cases/${caseId}`,
+      method: 'put',
+      data,
+    }),
+  removeEvalCase: (agentId: number, caseId: number) =>
+    request<void>({
+      url: `/agents/${agentId}/release/eval-cases/${caseId}`,
+      method: 'delete',
+    }),
+  submit: (agentId: number) =>
+    request<AgentVersionView>({
+      url: `/agents/${agentId}/release/submit`,
+      method: 'post',
+    }),
+  evaluate: (agentId: number, versionNo: number) =>
+    request<AgentVersionView>({
+      url: `/agents/${agentId}/release/${versionNo}/evaluate`,
+      method: 'post',
+    }),
+  approve: (agentId: number, versionNo: number, comment?: string) =>
+    request<AgentVersionView>({
+      url: `/agents/${agentId}/release/${versionNo}/approve`,
+      method: 'post',
+      data: { comment },
+    }),
+  reject: (agentId: number, versionNo: number, comment: string) =>
+    request<AgentVersionView>({
+      url: `/agents/${agentId}/release/${versionNo}/reject`,
+      method: 'post',
+      data: { comment },
+    }),
+  canary: (agentId: number, versionNo: number, percent: number) =>
+    request<AgentVersionView>({
+      url: `/agents/${agentId}/release/${versionNo}/canary`,
+      method: 'post',
+      data: { percent },
+    }),
+  promote: (agentId: number, versionNo: number) =>
+    request<AgentVersionView>({
+      url: `/agents/${agentId}/release/${versionNo}/promote`,
+      method: 'post',
+    }),
 }
 
 export const supplierApi = {
@@ -442,4 +533,8 @@ export const auditApi = {
 export const systemApi = {
   health: () => request<HealthStatus>({ url: '/health', method: 'get' }),
   meta: () => request<PublicMeta>({ url: '/public/meta', method: 'get' }),
+}
+
+export const licenseApi = {
+  status: () => request<LicenseStatusView>({ url: '/license', method: 'get' }),
 }

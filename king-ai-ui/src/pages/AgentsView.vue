@@ -4,10 +4,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import {
   ChatDotRound,
+  Check,
+  Close,
   Connection,
   Collection,
   CopyDocument,
   Cpu,
+  DataLine,
   Delete,
   Download,
   EditPen,
@@ -16,19 +19,23 @@ import {
   Plus,
   Search,
   Upload,
+  VideoPlay,
 } from '@element-plus/icons-vue'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
-import { agentApi, knowledgeApi, mcpApi, modelApi, skillApi, workspaceApi } from '@/api'
+import { agentApi, agentReleaseApi, knowledgeApi, mcpApi, modelApi, skillApi, workspaceApi } from '@/api'
 import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import type {
+  AgentEvalCaseSaveRequest,
+  AgentEvalCaseView,
   AgentSaveRequest,
   AgentVersionView,
   AgentView,
   KnowledgeBaseView,
   McpView,
   ModelOption,
+  ReleaseStatus,
   SkillView,
   WorkspaceStatsView,
 } from '@/api/types'
@@ -70,6 +77,28 @@ const formRef = ref<FormInstance>()
 const versions = ref<AgentVersionView[]>([])
 const versionsLoading = ref(false)
 const rollingBack = ref<number | null>(null)
+const releaseBusy = ref<string | null>(null)
+
+const evalCases = ref<AgentEvalCaseView[]>([])
+const evalLoading = ref(false)
+const evalDialogVisible = ref(false)
+const evalSaving = ref(false)
+const editingCaseId = ref<number | null>(null)
+const evalForm = reactive<AgentEvalCaseSaveRequest>({
+  name: '',
+  prompt: '',
+  expectedKeywords: '',
+  weight: 1,
+  status: 0,
+})
+
+const canaryVisible = ref(false)
+const canaryPercent = ref(20)
+const canaryTarget = ref<AgentVersionView | null>(null)
+
+const rejectVisible = ref(false)
+const rejectComment = ref('')
+const rejectTarget = ref<AgentVersionView | null>(null)
 
 interface AgentForm {
   name: string
@@ -132,6 +161,11 @@ function resetForm() {
     skillIds: [],
   })
   versions.value = []
+  evalCases.value = []
+  evalDialogVisible.value = false
+  canaryVisible.value = false
+  rejectVisible.value = false
+  releaseBusy.value = null
 }
 
 async function loadAgents() {
@@ -220,6 +254,7 @@ function openEdit(agent: AgentView) {
   applyAgentToForm(agent)
   drawerVisible.value = true
   void loadVersions(agent.id)
+  void loadEvalCases(agent.id)
 }
 
 async function loadVersions(agentId: number) {
@@ -230,6 +265,253 @@ async function loadVersions(agentId: number) {
     versions.value = []
   } finally {
     versionsLoading.value = false
+  }
+}
+
+async function loadEvalCases(agentId: number) {
+  evalLoading.value = true
+  try {
+    evalCases.value = await agentReleaseApi.evalCases(agentId)
+  } catch {
+    evalCases.value = []
+  } finally {
+    evalLoading.value = false
+  }
+}
+
+function releaseLabel(status: ReleaseStatus): string {
+  switch (status) {
+    case 'PENDING_REVIEW':
+      return '待审批'
+    case 'APPROVED':
+      return '已审批'
+    case 'CANARY':
+      return '灰度中'
+    case 'PUBLISHED':
+      return '已发布'
+    case 'REJECTED':
+      return '已驳回'
+    case 'ARCHIVED':
+      return '已归档'
+    default:
+      return '草稿'
+  }
+}
+
+function releaseClass(status: ReleaseStatus): string {
+  if (status === 'PUBLISHED') return 'published'
+  if (status === 'PENDING_REVIEW' || status === 'CANARY') return 'version'
+  if (status === 'REJECTED') return 'disabled'
+  return 'draft'
+}
+
+async function refreshRelease(agentId: number) {
+  await Promise.all([loadAgents(), loadVersions(agentId), loadEvalCases(agentId), loadStats()])
+}
+
+async function submitRelease(agent: AgentView | null = null) {
+  const agentId = agent?.id ?? editingId.value
+  if (!agentId) return
+  releaseBusy.value = `submit-${agentId}`
+  try {
+    const version = await agentReleaseApi.submit(agentId)
+    if (version.status === 'PUBLISHED') {
+      ElMessage.success(`已发布 v${version.versionNo}`)
+    } else {
+      ElMessage.success(`已提交 v${version.versionNo} 审批，等待空间管理员审核`)
+    }
+    await refreshRelease(agentId)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '提交发布失败')
+  } finally {
+    releaseBusy.value = null
+  }
+}
+
+async function evaluateVersion(version: AgentVersionView) {
+  const agentId = editingId.value
+  if (!agentId) return
+  releaseBusy.value = `eval-${version.versionNo}`
+  try {
+    const result = await agentReleaseApi.evaluate(agentId, version.versionNo)
+    ElMessage.success(
+      `评测完成：${result.evalPassed}/${result.evalTotal} 通过，得分 ${result.evalScore ?? 0}`,
+    )
+    await loadVersions(agentId)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '评测失败')
+  } finally {
+    releaseBusy.value = null
+  }
+}
+
+async function approveVersion(version: AgentVersionView) {
+  const agentId = editingId.value
+  if (!agentId) return
+  releaseBusy.value = `approve-${version.versionNo}`
+  try {
+    await agentReleaseApi.approve(agentId, version.versionNo)
+    ElMessage.success(`已审批通过 v${version.versionNo}`)
+    await loadVersions(agentId)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '审批失败')
+  } finally {
+    releaseBusy.value = null
+  }
+}
+
+function openReject(version: AgentVersionView) {
+  rejectTarget.value = version
+  rejectComment.value = ''
+  rejectVisible.value = true
+}
+
+async function confirmReject() {
+  const agentId = editingId.value
+  const version = rejectTarget.value
+  if (!agentId || !version) return
+  if (!rejectComment.value.trim()) {
+    ElMessage.warning('请填写驳回原因')
+    return
+  }
+  releaseBusy.value = `reject-${version.versionNo}`
+  try {
+    await agentReleaseApi.reject(agentId, version.versionNo, rejectComment.value.trim())
+    rejectVisible.value = false
+    ElMessage.success(`已驳回 v${version.versionNo}`)
+    await loadVersions(agentId)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '驳回失败')
+  } finally {
+    releaseBusy.value = null
+  }
+}
+
+function openCanary(version: AgentVersionView) {
+  canaryTarget.value = version
+  canaryPercent.value = version.canaryPercent || 20
+  canaryVisible.value = true
+}
+
+async function confirmCanary() {
+  const agentId = editingId.value
+  const version = canaryTarget.value
+  if (!agentId || !version) return
+  if (canaryPercent.value < 1 || canaryPercent.value > 99) {
+    ElMessage.warning('灰度比例需在 1-99 之间')
+    return
+  }
+  releaseBusy.value = `canary-${version.versionNo}`
+  try {
+    await agentReleaseApi.canary(agentId, version.versionNo, canaryPercent.value)
+    canaryVisible.value = false
+    ElMessage.success(`v${version.versionNo} 已进入 ${canaryPercent.value}% 灰度`)
+    await loadVersions(agentId)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '设置灰度失败')
+  } finally {
+    releaseBusy.value = null
+  }
+}
+
+async function promoteVersion(version: AgentVersionView) {
+  const agentId = editingId.value
+  if (!agentId) return
+  try {
+    await ElMessageBox.confirm(
+      `确认将 v${version.versionNo} 正式发布？全量流量会切换到该版本。`,
+      '正式发布',
+      { type: 'warning', confirmButtonText: '发布', cancelButtonText: '取消' },
+    )
+  } catch {
+    return
+  }
+  releaseBusy.value = `promote-${version.versionNo}`
+  try {
+    await agentReleaseApi.promote(agentId, version.versionNo)
+    ElMessage.success(`v${version.versionNo} 已正式发布`)
+    await refreshRelease(agentId)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '发布失败')
+  } finally {
+    releaseBusy.value = null
+  }
+}
+
+function openCreateCase() {
+  editingCaseId.value = null
+  Object.assign(evalForm, {
+    name: '',
+    prompt: '',
+    expectedKeywords: '',
+    weight: 1,
+    status: 0,
+  })
+  evalDialogVisible.value = true
+}
+
+function openEditCase(item: AgentEvalCaseView) {
+  editingCaseId.value = item.id
+  Object.assign(evalForm, {
+    name: item.name,
+    prompt: item.prompt,
+    expectedKeywords: item.expectedKeywords,
+    weight: item.weight,
+    status: item.status,
+  })
+  evalDialogVisible.value = true
+}
+
+async function saveEvalCase() {
+  const agentId = editingId.value
+  if (!agentId) return
+  if (!evalForm.name.trim() || !evalForm.prompt.trim() || !evalForm.expectedKeywords.trim()) {
+    ElMessage.warning('请填写用例名称、评测问题与期望关键词')
+    return
+  }
+  evalSaving.value = true
+  try {
+    const payload: AgentEvalCaseSaveRequest = {
+      name: evalForm.name.trim(),
+      prompt: evalForm.prompt.trim(),
+      expectedKeywords: evalForm.expectedKeywords.trim(),
+      weight: evalForm.weight,
+      status: evalForm.status,
+    }
+    if (editingCaseId.value) {
+      await agentReleaseApi.updateEvalCase(agentId, editingCaseId.value, payload)
+      ElMessage.success('评测用例已更新')
+    } else {
+      await agentReleaseApi.createEvalCase(agentId, payload)
+      ElMessage.success('评测用例已创建')
+    }
+    evalDialogVisible.value = false
+    await loadEvalCases(agentId)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '保存评测用例失败')
+  } finally {
+    evalSaving.value = false
+  }
+}
+
+async function removeEvalCase(item: AgentEvalCaseView) {
+  const agentId = editingId.value
+  if (!agentId) return
+  try {
+    await ElMessageBox.confirm(`确认删除评测用例「${item.name}」？`, '删除评测用例', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+  try {
+    await agentReleaseApi.removeEvalCase(agentId, item.id)
+    ElMessage.success('评测用例已删除')
+    await loadEvalCases(agentId)
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '删除评测用例失败')
   }
 }
 
@@ -297,18 +579,16 @@ async function submit() {
 }
 
 async function togglePublish(agent: AgentView) {
+  if (agent.publishStatus !== 1) {
+    await submitRelease(agent)
+    return
+  }
   try {
-    const updated =
-      agent.publishStatus === 1
-        ? await agentApi.unpublish(agent.id)
-        : await agentApi.publish(agent.id)
+    const updated = await agentApi.unpublish(agent.id)
     const index = agents.value.findIndex((item) => item.id === updated.id)
     if (index >= 0) agents.value[index] = updated
-    ElMessage.success(agent.publishStatus === 1 ? '已下线智能体' : '已发布智能体')
+    ElMessage.success('已下线智能体')
     await loadStats()
-    if (updated.publishStatus === 1 && updated.publicId) {
-      ElMessage.info('发布成功，可在卡片菜单中复制公开对话链接')
-    }
   } catch (error) {
     ElMessage.error(error instanceof ApiError ? error.message : '操作失败')
   }
@@ -493,13 +773,14 @@ onMounted(async () => {
                 <el-button
                   size="small"
                   :disabled="agent.status !== 0 && agent.publishStatus !== 1"
+                  :loading="releaseBusy === `submit-${agent.id}`"
                   @click="togglePublish(agent)"
                 >
                   <el-icon>
                     <Download v-if="agent.publishStatus === 1" />
                     <Upload v-else />
                   </el-icon>
-                  {{ agent.publishStatus === 1 ? '下线' : '发布' }}
+                  {{ agent.publishStatus === 1 ? '下线' : '提交发布' }}
                 </el-button>
                 <el-dropdown trigger="click" @command="(command: string) => handleCommand(command, agent)">
                   <el-button size="small" class="more-btn">
@@ -753,24 +1034,153 @@ onMounted(async () => {
         </div>
 
         <div v-if="editingId" class="form-section">
-          <div class="form-section-title">发布快照</div>
+          <div class="section-head">
+            <div>
+              <div class="form-section-title">发布审批与灰度</div>
+              <p class="field-hint">提交后生成不可变版本快照，审批通过后支持灰度与全量发布。</p>
+            </div>
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :disabled="!auth.canEditSpace"
+              :loading="releaseBusy === `submit-${editingId}`"
+              @click="submitRelease()"
+            >
+              <el-icon><Upload /></el-icon>
+              提交发布
+            </el-button>
+          </div>
           <div v-if="versionsLoading" class="inline-hint">正在加载版本历史…</div>
           <div v-else-if="!versions.length" class="inline-hint">
-            发布后会生成不可变版本快照；重新发布或回滚都会产生新版本。
+            还没有发布版本。提交发布后会进入审批流程。
           </div>
           <div v-else class="version-list">
-            <div v-for="version in versions" :key="version.versionNo" class="version-row">
-              <span class="version-no">v{{ version.versionNo }}</span>
-              <span class="version-time">{{ fromNow(version.publishedAt) }}</span>
-              <span v-if="version.current" class="badge published">当前</span>
-              <el-button
-                v-else
-                size="small"
-                :loading="rollingBack === version.versionNo"
-                @click="rollback(version)"
-              >
-                回滚
-              </el-button>
+            <div v-for="version in versions" :key="version.versionNo" class="version-row release-row">
+              <div class="version-main">
+                <div class="version-head">
+                  <span class="version-no">v{{ version.versionNo }}</span>
+                  <span class="badge" :class="releaseClass(version.status)">
+                    {{ releaseLabel(version.status) }}
+                  </span>
+                  <span v-if="version.current" class="badge published">当前版本</span>
+                  <span v-if="version.status === 'CANARY'" class="version-note">
+                    {{ version.canaryPercent }}% 流量
+                  </span>
+                </div>
+                <div class="version-meta">
+                  <span>{{ fromNow(version.publishedAt) }}</span>
+                  <span v-if="version.evalRunAt">
+                    评测 {{ version.evalPassed ?? 0 }}/{{ version.evalTotal ?? 0 }} ·
+                    {{ version.evalScore ?? 0 }} 分
+                  </span>
+                  <span v-else-if="version.status !== 'PUBLISHED'">未评测</span>
+                </div>
+                <p v-if="version.evalSummary" class="version-summary">{{ version.evalSummary }}</p>
+                <p v-if="version.reviewComment" class="version-comment">
+                  审批意见：{{ version.reviewComment }}
+                </p>
+              </div>
+              <div class="version-actions">
+                <el-button
+                  v-if="version.status !== 'PUBLISHED' && version.status !== 'ARCHIVED'"
+                  size="small"
+                  :loading="releaseBusy === `eval-${version.versionNo}`"
+                  @click="evaluateVersion(version)"
+                >
+                  <el-icon><VideoPlay /></el-icon>
+                  评测
+                </el-button>
+                <template v-if="version.status === 'PENDING_REVIEW' && auth.canManageSpace">
+                  <el-button
+                    size="small"
+                    type="success"
+                    :loading="releaseBusy === `approve-${version.versionNo}`"
+                    @click="approveVersion(version)"
+                  >
+                    <el-icon><Check /></el-icon>
+                    通过
+                  </el-button>
+                  <el-button size="small" type="danger" plain @click="openReject(version)">
+                    <el-icon><Close /></el-icon>
+                    驳回
+                  </el-button>
+                </template>
+                <template v-if="version.status === 'APPROVED' && auth.canManageSpace">
+                  <el-button size="small" @click="openCanary(version)">
+                    <el-icon><DataLine /></el-icon>
+                    灰度
+                  </el-button>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    :loading="releaseBusy === `promote-${version.versionNo}`"
+                    @click="promoteVersion(version)"
+                  >
+                    <el-icon><Upload /></el-icon>
+                    正式发布
+                  </el-button>
+                </template>
+                <template v-if="version.status === 'CANARY' && auth.canManageSpace">
+                  <el-button size="small" @click="openCanary(version)">调整灰度</el-button>
+                  <el-button
+                    size="small"
+                    type="primary"
+                    :loading="releaseBusy === `promote-${version.versionNo}`"
+                    @click="promoteVersion(version)"
+                  >
+                    正式发布
+                  </el-button>
+                </template>
+                <el-button
+                  v-if="version.status === 'PUBLISHED' && !version.current"
+                  size="small"
+                  :loading="rollingBack === version.versionNo"
+                  @click="rollback(version)"
+                >
+                  回滚
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="editingId" class="form-section">
+          <div class="section-head">
+            <div>
+              <div class="form-section-title">评测用例</div>
+              <p class="field-hint">审批前需运行评测；存在启用用例时，得分需达到发布门槛。</p>
+            </div>
+            <el-button size="small" :disabled="!auth.canEditSpace" @click="openCreateCase">
+              <el-icon><Plus /></el-icon>
+              新增用例
+            </el-button>
+          </div>
+          <div v-if="evalLoading" class="inline-hint">正在加载评测用例…</div>
+          <div v-else-if="!evalCases.length" class="inline-hint">
+            还没有评测用例。建议补充 3-5 条覆盖核心业务问题。
+          </div>
+          <div v-else class="eval-list">
+            <div v-for="item in evalCases" :key="item.id" class="eval-row">
+              <div class="eval-main">
+                <div class="eval-head">
+                  <strong>{{ item.name }}</strong>
+                  <span class="badge" :class="item.status === 0 ? 'published' : 'draft'">
+                    {{ item.status === 0 ? '启用' : '停用' }}
+                  </span>
+                  <span class="eval-weight">权重 {{ item.weight }}</span>
+                </div>
+                <p class="eval-prompt">{{ item.prompt }}</p>
+                <p class="eval-keywords">关键词：{{ item.expectedKeywords }}</p>
+              </div>
+              <div v-if="auth.canEditSpace" class="eval-actions">
+                <el-button size="small" text @click="openEditCase(item)">
+                  <el-icon><EditPen /></el-icon>
+                </el-button>
+                <el-button size="small" text type="danger" @click="removeEvalCase(item)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
             </div>
           </div>
         </div>
@@ -785,6 +1195,99 @@ onMounted(async () => {
         </div>
       </template>
     </el-drawer>
+
+    <el-dialog
+      v-model="evalDialogVisible"
+      :title="editingCaseId ? '编辑评测用例' : '新增评测用例'"
+      width="560px"
+    >
+      <el-form label-position="top">
+        <el-form-item label="用例名称" required>
+          <el-input v-model="evalForm.name" maxlength="120" placeholder="例如：退换货政策" />
+        </el-form-item>
+        <el-form-item label="评测问题" required>
+          <el-input
+            v-model="evalForm.prompt"
+            type="textarea"
+            :rows="3"
+            maxlength="10000"
+            placeholder="发送给智能体的用户问题"
+          />
+        </el-form-item>
+        <el-form-item label="期望关键词" required>
+          <el-input
+            v-model="evalForm.expectedKeywords"
+            placeholder="例如：7 天,无理由,运费"
+            maxlength="2000"
+          />
+          <div class="field-hint">
+            使用逗号分隔；回答需命中全部关键词才算通过，得分按命中比例计算。
+          </div>
+        </el-form-item>
+        <div class="inline-fields">
+          <el-form-item label="权重" class="grow">
+            <el-input-number v-model="evalForm.weight" :min="1" :max="10" />
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-switch
+              v-model="evalForm.status"
+              :active-value="0"
+              :inactive-value="1"
+              active-text="启用"
+              inactive-text="停用"
+            />
+          </el-form-item>
+        </div>
+      </el-form>
+      <template #footer>
+        <el-button @click="evalDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="evalSaving" @click="saveEvalCase">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="canaryVisible" title="设置灰度比例" width="420px">
+      <p class="dialog-hint">
+        灰度期间按请求哈希将部分流量路由到该版本，其余流量继续使用当前发布版本。
+      </p>
+      <div class="canary-slider">
+        <el-slider v-model="canaryPercent" :min="1" :max="99" :step="1" show-input />
+      </div>
+      <template #footer>
+        <el-button @click="canaryVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="canaryTarget ? releaseBusy === `canary-${canaryTarget.versionNo}` : false"
+          @click="confirmCanary"
+        >
+          确认灰度
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="rejectVisible" title="驳回发布" width="460px">
+      <el-form label-position="top">
+        <el-form-item label="驳回原因" required>
+          <el-input
+            v-model="rejectComment"
+            type="textarea"
+            :rows="3"
+            maxlength="1000"
+            show-word-limit
+            placeholder="说明需要调整的问题，便于提交人修改后重新提交"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="rejectVisible = false">取消</el-button>
+        <el-button
+          type="danger"
+          :loading="rejectTarget ? releaseBusy === `reject-${rejectTarget.versionNo}` : false"
+          @click="confirmReject"
+        >
+          确认驳回
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -972,6 +1475,144 @@ onMounted(async () => {
 
 .version-time {
   flex: 1;
+}
+
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-head .form-section-title {
+  margin-bottom: 4px;
+}
+
+.section-head .field-hint {
+  margin-top: 0;
+}
+
+.release-row {
+  align-items: flex-start;
+}
+
+.version-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.version-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.version-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: #7d89a8;
+  font-size: 10.5px;
+}
+
+.version-summary,
+.version-comment {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.version-summary {
+  color: #8b96b3;
+}
+
+.version-comment {
+  color: #c9a2ff;
+}
+
+.version-note {
+  font-size: 10px;
+  color: #9fd8ff;
+}
+
+.version-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  max-width: 46%;
+}
+
+.eval-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eval-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--king-line);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.eval-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.eval-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--king-text-soft);
+}
+
+.eval-weight {
+  font-size: 10px;
+  color: #7d89a8;
+}
+
+.eval-prompt {
+  margin: 6px 0 0;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--king-muted);
+}
+
+.eval-keywords {
+  margin: 4px 0 0;
+  font-size: 10.5px;
+  color: #8b96b3;
+}
+
+.eval-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.dialog-hint {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--king-muted);
+}
+
+.canary-slider {
+  padding: 6px 4px 0;
 }
 
 .agent-intro {

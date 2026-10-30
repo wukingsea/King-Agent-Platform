@@ -25,6 +25,11 @@ api:
   tolerations: []
   affinity: {}
   terminationGracePeriodSeconds: 120
+  # Extra environment for capabilities without dedicated values (SSO/OIDC, MFA,
+  # OCR, release governance). Use extraEnvFrom or valueFrom to keep credentials
+  # in a Secret instead of rendering them into the ConfigMap.
+  extraEnv: []
+  extraEnvFrom: []
   # Compliance export storage. `local` writes to the exports volume; `s3` uses any
   # S3-compatible endpoint (MinIO, AWS S3, OSS) and makes the volume unnecessary.
   export:
@@ -45,6 +50,16 @@ api:
     currency: USD
     defaultInputPricePerMillion: 0
     defaultOutputPricePerMillion: 0
+  # Offline Ed25519 license. Create the Secret from the signed file:
+  #   kubectl create secret generic king-ai-license --from-file=license.json=./license.json
+  # publicKey accepts a base64url/base64 raw 32-byte key or a PEM public key.
+  # When enabled with an invalid license the API refuses to start.
+  license:
+    enabled: false
+    existingSecret: ""
+    secretKey: license.json
+    publicKey: ""
+    mountPath: /app/license
 
 ui:
   image:

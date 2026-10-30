@@ -6,6 +6,7 @@ import com.king.ai.common.OptimisticLocks;
 import com.king.ai.common.Texts;
 import com.king.ai.common.security.SpaceRole;
 import com.king.ai.common.security.UserPrincipal;
+import com.king.ai.license.LicenseService;
 import com.king.ai.system.dto.MemberUpdateRequest;
 import com.king.ai.system.dto.SpaceCreateRequest;
 import com.king.ai.system.dto.SpaceMemberView;
@@ -42,6 +43,7 @@ public class SpaceService {
     private final UserSpaceMapper userSpaceMapper;
     private final UserMapper userMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final LicenseService licenseService;
 
     public List<SpaceView> listFor(UserPrincipal principal) {
         List<Space> spaces;
@@ -179,6 +181,7 @@ public class SpaceService {
 
     @Transactional
     public SpaceView create(SpaceCreateRequest request, Long creatorId) {
+        licenseService.ensureSpaceCapacity();
         String code = request.code().trim().toLowerCase();
         // Archived spaces keep occupying the unique code, so the check must include them.
         Long count = jdbcTemplate.queryForObject(

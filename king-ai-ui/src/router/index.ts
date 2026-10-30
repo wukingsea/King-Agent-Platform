@@ -81,6 +81,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '业务空间', admin: true },
       },
       {
+        path: 'license',
+        name: 'license',
+        component: () => import('@/pages/LicenseView.vue'),
+        meta: { title: '平台许可', admin: true },
+      },
+      {
         path: 'compliance',
         name: 'compliance',
         component: () => import('@/pages/ComplianceView.vue'),

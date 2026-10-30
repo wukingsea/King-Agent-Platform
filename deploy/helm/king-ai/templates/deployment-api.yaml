@@ -67,6 +67,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "king-ai.fullname" . }}
+            {{- with .Values.api.extraEnvFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: "prod"
@@ -87,6 +90,9 @@ spec:
                 secretKeyRef:
                   name: {{ required "api.export.s3.existingSecret is required when api.export.storage=s3" $s3.existingSecret }}
                   key: {{ $s3.secretKeyKey | default "secret-key" }}
+            {{- end }}
+            {{- with .Values.api.extraEnv }}
+            {{- toYaml . | nindent 12 }}
             {{- end }}
           startupProbe:
             httpGet:
@@ -117,9 +123,22 @@ spec:
               mountPath: /tmp
             - name: exports
               mountPath: /app/data/exports
+            {{- if .Values.api.license.enabled }}
+            - name: license
+              mountPath: {{ .Values.api.license.mountPath | default "/app/license" }}
+              readOnly: true
+            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
+        {{- if .Values.api.license.enabled }}
+        - name: license
+          secret:
+            secretName: {{ required "api.license.existingSecret is required when api.license.enabled=true" .Values.api.license.existingSecret }}
+            items:
+              - key: {{ .Values.api.license.secretKey | default "license.json" }}
+                path: license.json
+        {{- end }}
         - name: exports
           {{- if and .Values.persistence.exports.enabled (eq .Values.persistence.exports.mode "pvc") }}
           persistentVolumeClaim:

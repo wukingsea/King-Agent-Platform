@@ -9,6 +9,7 @@ import com.king.ai.common.PageResult;
 import com.king.ai.common.Texts;
 import com.king.ai.common.security.SpaceRole;
 import com.king.ai.common.security.UserPrincipal;
+import com.king.ai.license.LicenseService;
 import com.king.ai.system.dto.SpaceView;
 import com.king.ai.system.dto.UserCreateRequest;
 import com.king.ai.system.dto.UserUpdateRequest;
@@ -35,6 +36,7 @@ public class UserService {
     private final SpaceService spaceService;
     private final PasswordEncoder passwordEncoder;
     private final TokenStore tokenStore;
+    private final LicenseService licenseService;
 
     public User require(Long id) {
         if (id == null) {
@@ -88,6 +90,7 @@ public class UserService {
 
     @Transactional
     public UserView create(UserCreateRequest request) {
+        licenseService.ensureUserCapacity();
         String username = request.username().trim().toLowerCase();
         if (findByUsername(username) != null) {
             throw BizException.conflict("账号已存在");

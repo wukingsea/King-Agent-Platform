@@ -8,7 +8,9 @@ import com.king.ai.agent.mapper.AgentMcpMapper;
 import com.king.ai.agent.mapper.AgentSkillMapper;
 import com.king.ai.agent.mapper.AgentVersionMapper;
 import com.king.ai.common.BizException;
+import com.king.ai.config.KingAiProperties;
 import com.king.ai.knowledge.mapper.KnowledgeBaseMapper;
+import com.king.ai.license.LicenseService;
 import com.king.ai.mcp.mapper.McpServerMapper;
 import com.king.ai.model.ModelRuntimeService;
 import com.king.ai.model.mapper.SupplierModelMapper;
@@ -53,6 +55,10 @@ class AgentServiceSoftDeleteTest {
     private ModelRuntimeService modelRuntimeService;
     @Mock
     private ObjectMapper objectMapper;
+    @Mock
+    private KingAiProperties properties;
+    @Mock
+    private LicenseService licenseService;
 
     @InjectMocks
     private AgentService agentService;

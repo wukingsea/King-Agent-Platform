@@ -29,6 +29,7 @@ public class McpClientFactory {
     private final ObjectMapper objectMapper;
     private final CryptoService cryptoService;
     private final OutboundUrlGuard outboundUrlGuard;
+    private final McpOAuthService oauthService;
     private final ConcurrentMap<Long, CachedClient> cache = new ConcurrentHashMap<>();
 
     private record Prepared(String url, Map<String, String> headers) {
@@ -83,8 +84,14 @@ public class McpClientFactory {
         if (violation != null) {
             throw new McpException(violation);
         }
-        return new Prepared(server.getUrl().trim(),
+        return new Prepared(server.getUrl().trim(), mergeHeaders(server));
+    }
+
+    private Map<String, String> mergeHeaders(McpServer server) {
+        Map<String, String> headers = new LinkedHashMap<>(
                 parseHeaders(cryptoService.decrypt(server.getHeaders())));
+        headers.putAll(oauthService.authorizationHeaders(server));
+        return headers;
     }
 
     private McpClient build(Prepared prepared) {

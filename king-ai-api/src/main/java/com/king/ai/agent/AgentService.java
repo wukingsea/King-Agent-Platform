@@ -1,6 +1,7 @@
 package com.king.ai.agent;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,14 +19,18 @@ import com.king.ai.agent.mapper.AgentMapper;
 import com.king.ai.agent.mapper.AgentMcpMapper;
 import com.king.ai.agent.mapper.AgentSkillMapper;
 import com.king.ai.agent.mapper.AgentVersionMapper;
+import com.king.ai.agent.release.CanaryRouting;
+import com.king.ai.agent.release.ReleaseState;
 import com.king.ai.common.BizException;
 import com.king.ai.common.Ids;
 import com.king.ai.common.OptimisticLocks;
 import com.king.ai.common.PageQuery;
 import com.king.ai.common.PageResult;
 import com.king.ai.common.Texts;
+import com.king.ai.config.KingAiProperties;
 import com.king.ai.knowledge.entity.KnowledgeBase;
 import com.king.ai.knowledge.mapper.KnowledgeBaseMapper;
+import com.king.ai.license.LicenseService;
 import com.king.ai.mcp.entity.McpServer;
 import com.king.ai.mcp.mapper.McpServerMapper;
 import com.king.ai.model.ModelRuntimeService;
@@ -40,6 +45,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -70,6 +79,8 @@ public class AgentService {
     private final SpaceMapper spaceMapper;
     private final ModelRuntimeService modelRuntimeService;
     private final ObjectMapper objectMapper;
+    private final KingAiProperties properties;
+    private final LicenseService licenseService;
 
     public PageResult<AgentView> list(Long spaceId, String keyword, PageQuery query) {
         LambdaQueryWrapper<Agent> wrapper = new LambdaQueryWrapper<Agent>()
@@ -123,6 +134,7 @@ public class AgentService {
 
     @Transactional
     public AgentView create(Long spaceId, AgentSaveRequest request) {
+        licenseService.ensureAgentCapacity();
         validateModels(spaceId, request.modelId(), request.fallbackModelId());
         Agent agent = new Agent();
         agent.setSpaceId(spaceId);
@@ -159,25 +171,27 @@ public class AgentService {
         agentMapper.softDeleteById(id);
     }
 
+    /**
+     * Legacy direct publish. When approvals are enforced this endpoint is closed and callers
+     * must go through {@code AgentReleaseService}.
+     */
     @Transactional
     public AgentView publish(Long spaceId, Long id) {
+        if (properties.getRelease().isRequireApproval()) {
+            throw BizException.conflict("发布需要审批，请通过发布流程提交版本");
+        }
         Agent agent = require(spaceId, id);
-        if (agent.getStatus() != null && agent.getStatus() != 0) {
-            throw BizException.badRequest("智能体已停用，无法发布");
-        }
-        if (Texts.isBlank(agent.getSystemPrompt())) {
-            throw BizException.badRequest("发布前请先配置系统提示词");
-        }
-        validateModels(spaceId, agent.getModelId(), agent.getFallbackModelId());
+        validateForRelease(agent);
         if (Texts.isBlank(agent.getPublicId())) {
             agent.setPublicId(Ids.publicId());
         }
         AgentSnapshot snapshot = snapshotOf(agent);
         int versionNo = nextVersionNo(agent.getId());
-        storeVersion(agent, snapshot, versionNo);
+        createVersion(agent, snapshot, ReleaseState.PUBLISHED, null);
         agent.setPublishStatus(1);
         agent.setPublishedVersion(versionNo);
         OptimisticLocks.requireUpdated(agentMapper.updateById(agent), "智能体");
+        archiveOtherPublished(agent.getId(), versionNo);
         return view(agent);
     }
 
@@ -196,8 +210,8 @@ public class AgentService {
                         .eq(AgentVersion::getAgentId, id)
                         .orderByDesc(AgentVersion::getVersionNo))
                 .stream()
-                .map(version -> new AgentVersionView(version.getVersionNo(), version.getCreatedAt(),
-                        version.getCreatedBy(), current != null && current.equals(version.getVersionNo())))
+                .map(version -> AgentVersionView.of(version,
+                        current != null && current.equals(version.getVersionNo())))
                 .toList();
     }
 
@@ -217,13 +231,13 @@ public class AgentService {
         if (version == null) {
             throw BizException.notFound("指定版本不存在");
         }
-        AgentSnapshot snapshot = readSnapshot(version.getConfigJson());
+        AgentSnapshot snapshot = readSnapshot(version);
         validateModels(spaceId, snapshot.modelId(), snapshot.fallbackModelId());
         applySnapshot(agent, snapshot);
         if (isPublished(agent)) {
-            int next = nextVersionNo(id);
-            storeVersion(agent, snapshot, next);
+            int next = createVersion(agent, snapshot, ReleaseState.PUBLISHED, null).getVersionNo();
             agent.setPublishedVersion(next);
+            archiveOtherPublished(id, next);
         }
         OptimisticLocks.requireUpdated(agentMapper.updateById(agent), "智能体");
         saveBindings(spaceId, id, snapshot.knowledgeBaseIds(), snapshot.mcpIds(), snapshot.skillIds());
@@ -270,10 +284,10 @@ public class AgentService {
             return false;
         }
         AgentSnapshot snapshot = snapshotOf(agent);
-        int versionNo = nextVersionNo(agent.getId());
-        storeVersion(agent, snapshot, versionNo);
+        int versionNo = createVersion(agent, snapshot, ReleaseState.PUBLISHED, null).getVersionNo();
         agent.setPublishedVersion(versionNo);
         OptimisticLocks.requireUpdated(agentMapper.updateById(agent), "智能体");
+        archiveOtherPublished(agent.getId(), versionNo);
         log.info("Backfilled immutable publication v{} for legacy published agent {}", versionNo, agentId);
         return true;
     }
@@ -282,7 +296,24 @@ public class AgentService {
      * Public chats must run on the exact snapshot that was published, never on the editable row.
      */
     public AgentRuntime publishedRuntime(String publicId) {
+        return publishedRuntime(publicId, null);
+    }
+
+    /**
+     * Resolves the runtime for a public visitor. Visitors in the canary bucket see the canary
+     * snapshot; everyone else stays on the stable published snapshot.
+     */
+    public AgentRuntime publishedRuntime(String publicId, String visitorId) {
         Agent agent = requirePublished(publicId);
+        AgentVersion canary = canaryFor(agent, visitorId);
+        if (canary != null) {
+            try {
+                return AgentRuntime.published(agent, readSnapshot(canary));
+            } catch (RuntimeException ex) {
+                log.warn("Canary snapshot v{} for agent {} is unusable, falling back: {}",
+                        canary.getVersionNo(), agent.getId(), ex.getMessage());
+            }
+        }
         Integer publishedVersion = agent.getPublishedVersion();
         if (publishedVersion == null || publishedVersion <= 0) {
             throw BizException.conflict("智能体发布快照缺失，请重新发布后再访问");
@@ -294,7 +325,19 @@ public class AgentService {
             log.error("Published snapshot v{} for agent {} is missing", publishedVersion, agent.getId());
             throw BizException.conflict("智能体发布快照缺失，请重新发布后再访问");
         }
-        return AgentRuntime.published(agent, readSnapshot(version.getConfigJson()));
+        return AgentRuntime.published(agent, readSnapshot(version));
+    }
+
+    private AgentVersion canaryFor(Agent agent, String visitorId) {
+        AgentVersion canary = agentVersionMapper.selectOne(new LambdaQueryWrapper<AgentVersion>()
+                .eq(AgentVersion::getAgentId, agent.getId())
+                .eq(AgentVersion::getStatus, ReleaseState.CANARY.name())
+                .orderByDesc(AgentVersion::getVersionNo)
+                .last("LIMIT 1"));
+        if (canary == null || !CanaryRouting.selected(visitorId, agent.getId(), canary.getCanaryPercent())) {
+            return null;
+        }
+        return canary;
     }
 
     public AgentRuntime liveRuntime(Agent agent) {
@@ -365,7 +408,7 @@ public class AgentService {
         }
     }
 
-    private AgentSnapshot snapshotOf(Agent agent) {
+    public AgentSnapshot snapshotOf(Agent agent) {
         AgentBindings bindings = bindings(agent.getId());
         return new AgentSnapshot(agent.getName(), agent.getIntro(), agent.getModelId(),
                 agent.getSystemPrompt(), agent.getTemperature(), agent.getMaxTokens(),
@@ -374,13 +417,72 @@ public class AgentService {
                 bindings.skillIds());
     }
 
-    private void storeVersion(Agent agent, AgentSnapshot snapshot, int versionNo) {
+    public AgentVersion createVersion(Agent agent, AgentSnapshot snapshot, ReleaseState state,
+                                      Long requestedBy) {
+        String configJson = writeSnapshot(snapshot);
         AgentVersion version = new AgentVersion();
         version.setAgentId(agent.getId());
         version.setSpaceId(agent.getSpaceId());
-        version.setVersionNo(versionNo);
-        version.setConfigJson(writeSnapshot(snapshot));
+        version.setVersionNo(nextVersionNo(agent.getId()));
+        version.setConfigJson(configJson);
+        version.setStatus(state.name());
+        version.setCanaryPercent(0);
+        version.setConfigHash(sha256(configJson));
+        if (requestedBy != null) {
+            version.setRequestedBy(requestedBy);
+            version.setRequestedAt(LocalDateTime.now());
+        }
+        if (state == ReleaseState.PUBLISHED) {
+            version.setPublishedAt(LocalDateTime.now());
+        }
         agentVersionMapper.insert(version);
+        return version;
+    }
+
+    public AgentVersion requireVersion(Long spaceId, Long agentId, Integer versionNo) {
+        if (versionNo == null) {
+            throw BizException.badRequest("缺少版本号");
+        }
+        Agent agent = require(spaceId, agentId);
+        AgentVersion version = agentVersionMapper.selectOne(new LambdaQueryWrapper<AgentVersion>()
+                .eq(AgentVersion::getAgentId, agent.getId())
+                .eq(AgentVersion::getVersionNo, versionNo));
+        if (version == null) {
+            throw BizException.notFound("指定版本不存在");
+        }
+        return version;
+    }
+
+    public void validateForRelease(Agent agent) {
+        if (agent.getStatus() != null && agent.getStatus() != 0) {
+            throw BizException.badRequest("智能体已停用，无法发布");
+        }
+        if (Texts.isBlank(agent.getSystemPrompt())) {
+            throw BizException.badRequest("发布前请先配置系统提示词");
+        }
+        validateModels(agent.getSpaceId(), agent.getModelId(), agent.getFallbackModelId());
+    }
+
+    /**
+     * Marks the version as the active publication and archives the previous one.
+     */
+    public void publishVersion(Agent agent, AgentVersion version) {
+        if (Texts.isBlank(agent.getPublicId())) {
+            agent.setPublicId(Ids.publicId());
+        }
+        agent.setPublishStatus(1);
+        agent.setPublishedVersion(version.getVersionNo());
+        OptimisticLocks.requireUpdated(agentMapper.updateById(agent), "智能体");
+        archiveOtherPublished(agent.getId(), version.getVersionNo());
+    }
+
+    private void archiveOtherPublished(Long agentId, int keepVersionNo) {
+        agentVersionMapper.update(null, new LambdaUpdateWrapper<AgentVersion>()
+                .eq(AgentVersion::getAgentId, agentId)
+                .eq(AgentVersion::getStatus, ReleaseState.PUBLISHED.name())
+                .ne(AgentVersion::getVersionNo, keepVersionNo)
+                .set(AgentVersion::getStatus, ReleaseState.ARCHIVED.name())
+                .set(AgentVersion::getUpdatedAt, LocalDateTime.now()));
     }
 
     private int nextVersionNo(Long agentId) {
@@ -404,6 +506,25 @@ public class AgentService {
             return objectMapper.readValue(json, AgentSnapshot.class);
         } catch (Exception ex) {
             throw new BizException(500, "智能体快照已损坏，无法读取");
+        }
+    }
+
+    public AgentSnapshot readSnapshot(AgentVersion version) {
+        AgentSnapshot snapshot = readSnapshot(version.getConfigJson());
+        if (version.getConfigHash() != null
+                && !version.getConfigHash().equals(sha256(version.getConfigJson()))) {
+            throw BizException.conflict("版本快照校验失败，请重新发布");
+        }
+        return snapshot;
+    }
+
+    private static String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            return java.util.HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 is unavailable", ex);
         }
     }
 

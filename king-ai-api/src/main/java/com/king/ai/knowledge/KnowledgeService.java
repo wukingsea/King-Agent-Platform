@@ -21,6 +21,7 @@ import com.king.ai.knowledge.entity.KnowledgeChunk;
 import com.king.ai.knowledge.entity.KnowledgeDoc;
 import com.king.ai.knowledge.mapper.KnowledgeBaseMapper;
 import com.king.ai.knowledge.mapper.KnowledgeChunkMapper;
+import com.king.ai.knowledge.ocr.OcrService;
 import com.king.ai.knowledge.mapper.KnowledgeDocMapper;
 import com.king.ai.knowledge.vector.VectorHit;
 import com.king.ai.knowledge.vector.VectorRecord;
@@ -92,6 +93,7 @@ public class KnowledgeService {
     private final ModelRuntimeService modelRuntimeService;
     private final KnowledgeIndexQueue indexQueue;
     private final JdbcTemplate jdbcTemplate;
+    private final OcrService ocrService;
 
     public PageResult<KnowledgeBaseView> list(Long spaceId, String keyword, PageQuery query) {
         LambdaQueryWrapper<KnowledgeBase> wrapper = new LambdaQueryWrapper<KnowledgeBase>()
@@ -315,18 +317,32 @@ public class KnowledgeService {
         }
         String content;
         String sourceType;
+        boolean ocrApplicable = false;
         if (lower.endsWith(".pdf")) {
-            content = extractPdf(bytes);
+            PdfText pdf = extractPdf(bytes);
+            content = pdf.text();
+            ocrApplicable = ocrService.pdfNeedsOcr(content, pdf.pages());
+            if (ocrApplicable) {
+                content = ocrService.extractPdf(bytes, content, pdf.pages());
+            }
             sourceType = "PDF";
         } else if (lower.endsWith(".txt") || lower.endsWith(".md") || lower.endsWith(".markdown")) {
             content = new String(bytes, StandardCharsets.UTF_8).replace("\uFEFF", "");
             sourceType = "TEXT";
+        } else if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+            if (!ocrService.enabled()) {
+                throw BizException.badRequest("当前未启用 OCR，仅支持 TXT、Markdown 和 PDF 文件");
+            }
+            content = ocrService.recognizeImage(bytes);
+            sourceType = "IMAGE";
+            ocrApplicable = true;
         } else {
-            throw BizException.badRequest("仅支持 TXT、Markdown 和 PDF 文件");
+            throw BizException.badRequest("仅支持 TXT、Markdown、PDF 和图片文件");
         }
         content = content == null ? "" : content.trim();
         if (content.isEmpty()) {
-            throw BizException.badRequest("未能从文件中提取到文本内容");
+            throw BizException.badRequest(ocrApplicable
+                    ? "OCR 未能从文件中识别出文字" : "未能从文件中提取到文本内容");
         }
         if (content.length() > MAX_CONTENT_CHARS) {
             throw BizException.badRequest("文档内容不能超过 200 万字符");
@@ -683,12 +699,15 @@ public class KnowledgeService {
         docMapper.updateById(patch);
     }
 
-    private String extractPdf(byte[] bytes) {
+    private PdfText extractPdf(byte[] bytes) {
         try (PDDocument document = Loader.loadPDF(bytes)) {
-            return new PDFTextStripper().getText(document);
+            return new PdfText(new PDFTextStripper().getText(document), document.getNumberOfPages());
         } catch (IOException ex) {
             throw BizException.badRequest("PDF 解析失败：" + Texts.oneLine(ex.getMessage(), 200));
         }
+    }
+
+    private record PdfText(String text, int pages) {
     }
 
     private KnowledgeDocView view(KnowledgeDoc doc, int charCount) {

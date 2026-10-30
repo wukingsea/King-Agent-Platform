@@ -2,7 +2,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { authApi } from '@/api'
 import { SPACE_KEY, getSpaceId } from '@/api/http'
-import type { LoginRequest, SpaceRole, SpaceView, UserView } from '@/api/types'
+import type { AuthResponse, LoginRequest, SpaceRole, SpaceView, UserView } from '@/api/types'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<UserView | null>(null)
@@ -52,15 +52,30 @@ export const useAuthStore = defineStore('auth', () => {
     if (candidate) setSpace(candidate)
   }
 
+  function applySession(data: AuthResponse) {
+    user.value = data.user
+    spaces.value = data.spaces || []
+    resolveSpace(data.currentSpaceId)
+    authenticated.value = data.user != null
+    checked.value = true
+  }
+
   async function login(payload: LoginRequest) {
     loading.value = true
     try {
       const data = await authApi.login(payload)
-      user.value = data.user
-      spaces.value = data.spaces || []
-      resolveSpace(data.currentSpaceId)
-      authenticated.value = true
-      checked.value = true
+      if (!data.mfaRequired) applySession(data)
+      return data
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function verifyMfa(challenge: string, code: string) {
+    loading.value = true
+    try {
+      const data = await authApi.verifyMfa(challenge, code)
+      applySession(data)
       return data
     } finally {
       loading.value = false
@@ -71,10 +86,7 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     try {
       const data = await authApi.me()
-      user.value = data.user
-      spaces.value = data.spaces || []
-      resolveSpace(data.currentSpaceId)
-      authenticated.value = true
+      applySession(data)
       return data
     } catch {
       user.value = null
@@ -138,6 +150,7 @@ export const useAuthStore = defineStore('auth', () => {
     hasSpaceRole,
     displayName,
     login,
+    verifyMfa,
     fetchMe,
     ensureSession,
     logout,

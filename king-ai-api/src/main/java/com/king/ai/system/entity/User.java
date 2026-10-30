@@ -28,6 +28,11 @@ public class User extends BaseEntity {
     @TableField(updateStrategy = FieldStrategy.NEVER)
     private LocalDateTime lastLoginAt;
 
+    private Integer mfaEnabled;
+    private String mfaSecret;
+    private String mfaRecoveryCodes;
+    private LocalDateTime mfaEnrolledAt;
+
     @Version
     private Integer version;
 }

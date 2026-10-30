@@ -134,7 +134,11 @@ public class McpService {
 
     private McpView view(McpServer server, long agentCount) {
         return new McpView(server.getId(), server.getSpaceId(), server.getName(), server.getTransport(),
-                server.getUrl(), !Texts.isBlank(server.getHeaders()), server.getStatus(), server.getRemark(),
+                server.getUrl(), !Texts.isBlank(server.getHeaders()),
+                Texts.blankToDefault(server.getAuthType(), McpOAuthService.AUTH_NONE),
+                server.getOauthTokenUrl(), server.getOauthClientId(), server.getOauthScopes(),
+                !Texts.isBlank(server.getOauthClientSecret()), !Texts.isBlank(server.getOauthAccessToken()),
+                server.getOauthExpiresAt(), server.getStatus(), server.getRemark(),
                 agentCount, server.getCreatedAt());
     }
 
@@ -160,8 +164,55 @@ public class McpService {
         if (request.headers() != null) {
             server.setHeaders(encryptHeaders(request.headers()));
         }
+        applyAuth(server, request);
         server.setStatus(request.status() == null || request.status() == 0 ? 0 : 1);
         server.setRemark(Texts.trimTo(request.remark(), 500));
+    }
+
+    private void applyAuth(McpServer server, McpSaveRequest request) {
+        String authType;
+        try {
+            authType = McpOAuthService.normalizeAuthType(request.authType());
+        } catch (McpException ex) {
+            throw BizException.badRequest(ex.getMessage());
+        }
+        if (McpOAuthService.AUTH_NONE.equals(authType)) {
+            server.setAuthType(authType);
+            server.setOauthAccessToken(null);
+            server.setOauthRefreshToken(null);
+            server.setOauthExpiresAt(null);
+            return;
+        }
+        String tokenUrl = Texts.blankToDefault(request.oauthTokenUrl(), "").trim();
+        if (tokenUrl.isEmpty()) {
+            throw BizException.badRequest("启用 OAuth 2.0 时必须填写 Token 地址");
+        }
+        String violation = outboundUrlGuard.violation(tokenUrl);
+        if (violation != null) {
+            throw BizException.badRequest(violation);
+        }
+        if (Texts.isBlank(request.oauthClientId())) {
+            throw BizException.badRequest("启用 OAuth 2.0 时必须填写 Client ID");
+        }
+        String scopes = Texts.trimTo(request.oauthScopes(), 500);
+        boolean configChanged = !tokenUrl.equals(server.getOauthTokenUrl())
+                || !request.oauthClientId().trim().equals(server.getOauthClientId())
+                || !java.util.Objects.equals(scopes, server.getOauthScopes());
+        server.setAuthType(authType);
+        server.setOauthTokenUrl(Texts.trimTo(tokenUrl, 1000));
+        server.setOauthClientId(request.oauthClientId().trim());
+        server.setOauthScopes(scopes);
+        if (!Texts.isBlank(request.oauthClientSecret())) {
+            server.setOauthClientSecret(cryptoService.encrypt(request.oauthClientSecret().trim()));
+            configChanged = true;
+        } else if (server.getId() == null) {
+            throw BizException.badRequest("启用 OAuth 2.0 时必须填写 Client Secret");
+        }
+        if (configChanged) {
+            server.setOauthAccessToken(null);
+            server.setOauthRefreshToken(null);
+            server.setOauthExpiresAt(null);
+        }
     }
 
     private String encryptHeaders(String headers) {

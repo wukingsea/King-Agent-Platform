@@ -116,6 +116,27 @@ KING_AI_FINOPS_QUOTA_ENABLED=true
 KING_AI_FINOPS_CURRENCY=USD
 KING_AI_FINOPS_DEFAULT_INPUT_PRICE=0
 KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE=0
+
+# SSO / MFA（不启用 SSO 时保留 false）
+KING_AI_SSO_ENABLED=false
+# KING_AI_OIDC_ISSUER=https://idp.example.com
+# KING_AI_OIDC_CLIENT_ID=king-ai
+# KING_AI_OIDC_CLIENT_SECRET=...
+# KING_AI_OIDC_REDIRECT_URI=https://ai.example.com/api/auth/oidc/callback
+# KING_AI_OIDC_ROLE_CLAIM=roles
+# KING_AI_OIDC_DEFAULT_SPACE_CODE=default
+# KING_AI_OIDC_DEFAULT_ROLE=VIEWER
+KING_AI_MFA_ENABLED=true
+
+# OCR（扫描件与图片）；镜像已内置 tesseract 与 chi_sim/eng 语言包
+KING_AI_OCR_ENABLED=false
+# KING_AI_OCR_LANGUAGES=chi_sim+eng
+# KING_AI_OCR_MAX_PAGES=30
+
+# 离线许可证；文件放在 KING_AI_LICENSE_DIR（默认 ./deploy/airgap/license）
+KING_AI_LICENSE_ENABLED=false
+# KING_AI_LICENSE_FILE=/app/license/license.json
+# KING_AI_LICENSE_PUBLIC_KEY=<PEM 或 Base64 公钥>
 ```
 
 使用 Compose 自带的 MinIO 作为导出存储时，先创建 bucket，再在 `.env` 中启用：
@@ -283,6 +304,97 @@ curl -s -X PUT -H "Content-Type: application/json" -H "X-Space-Id: 1" -b cookies
 - 需要沿用旧布局时设置 `MILVUS_COLLECTION_MODE=per-kb`。从 `per-kb` 切换到 `shared` 后，已有知识库需要重新索引（重新生成向量）才能被检索到。
 - 本地开发使用 `king-ai.local-vector.scan-batch-size`（默认 2000）分页扫描，`king-ai.local-vector.max-scan`（默认 200000，`0` 不限制）控制单次查询扫描行数。
 
+### 4.8 SSO 与 MFA
+
+OIDC 单点登录需要配置 `KING_AI_SSO_ENABLED=true`，并至少提供 issuer、client ID 与回调地址；机密客户端还需 client secret。回调地址固定为：
+
+```text
+https://<你的域名>/api/auth/oidc/callback
+```
+
+- 登录页通过 `GET /api/auth/sso/config` 判断是否展示 SSO 入口；未启用时返回 `enabled=false`。
+- 授权码回调成功后写入会话 Cookie 并跳转 `KING_AI_OIDC_SUCCESS_REDIRECT`（默认 `/#/dashboard`），失败跳转 `/#/login?sso_error=...`。
+- 角色声明 `KING_AI_OIDC_ROLE_CLAIM` 默认 `roles`，支持 `ADMIN` 或 `space-code:EDITOR` 格式；只提升不降级，平台管理员不受影响。
+- `KING_AI_OIDC_AUTO_CREATE_USERS=false` 时，未绑定且邮箱未匹配的 SSO 用户会被拒绝，需管理员预先创建账号并填写相同邮箱。
+- SSO 首次创建用户会执行许可证用户容量检查。
+
+MFA 默认可由用户在「账号安全」中自行启用，`KING_AI_MFA_ENABLED=false` 可全局关闭。密码登录返回：
+
+```json
+{"data":{"token":null,"user":null,"spaces":[],"currentSpaceId":null,"mfaRequired":true,"mfaChallenge":"..."}}
+```
+
+随后提交动态码或恢复码：
+
+```bash
+curl -s -c cookies.txt -X POST http://localhost:8080/api/auth/mfa/verify \
+  -H "Content-Type: application/json" \
+  -d '{"challenge":"...","code":"123456"}'
+```
+
+挑战默认 5 分钟有效（`KING_AI_MFA_CHALLENGE_TTL`），恢复码数量由 `KING_AI_MFA_RECOVERY_CODE_COUNT` 控制（默认 8）。MFA 密钥与恢复码哈希加密存储；丢失认证器时使用恢复码登录并重新绑定。
+
+### 4.9 发布审批、灰度与评测
+
+发布走统一版本通道，接口位于 `/api/agents/{agentId}/release`：
+
+```bash
+# 维护评测用例（EDITOR+）
+curl -s -b cookies.txt -X POST http://localhost:8080/api/agents/1/release/eval-cases \
+  -H "Content-Type: application/json" -H "X-Space-Id: 1" \
+  -d '{"name":"价格问题","prompt":"退款政策是什么？","expectedKeywords":"退款,7 天","weight":2,"status":0}'
+
+# 运行评测、提交审批
+curl -s -b cookies.txt -X POST http://localhost:8080/api/agents/1/release/3/evaluate \
+  -H "X-Space-Id: 1"
+curl -s -b cookies.txt -X POST http://localhost:8080/api/agents/1/release/submit \
+  -H "X-Space-Id: 1"
+
+# 审批人通过（不能与提交人相同），再设置灰度或正式发布
+curl -s -b approver.txt -X POST http://localhost:8080/api/agents/1/release/3/approve \
+  -H "Content-Type: application/json" -H "X-Space-Id: 1" -d '{"comment":"ok"}'
+curl -s -b approver.txt -X POST http://localhost:8080/api/agents/1/release/3/canary \
+  -H "Content-Type: application/json" -H "X-Space-Id: 1" -d '{"percent":20}'
+curl -s -b approver.txt -X POST http://localhost:8080/api/agents/1/release/3/promote \
+  -H "Content-Type: application/json" -H "X-Space-Id: 1" -d '{}'
+```
+
+- 状态机：`DRAFT -> PENDING_REVIEW -> APPROVED -> CANARY -> PUBLISHED`，驳回为 `REJECTED`；回滚会基于历史快照生成新版本。
+- 审批前若存在启用用例，最近一次评测得分必须达到 `KING_AI_RELEASE_EVAL_PASS_SCORE`（默认 0.8）。
+- `KING_AI_RELEASE_REQUIRE_APPROVAL=false` 时提交即发布；此时旧发布接口仍返回 409，请统一使用 `submit`。
+- 灰度比例范围 1–99，只有 `APPROVED` / `CANARY` 版本可调整；正式发布后智能体公开页切换到新版本。
+
+### 4.10 OCR
+
+API 镜像已安装 `tesseract-ocr`、`tesseract-ocr-data-eng` 与 `tesseract-ocr-data-chi_sim`。启用后：
+
+- 文本层字符数低于 `min-text-chars-per-page * pages` 的 PDF 会按 `KING_AI_OCR_RENDER_DPI`（默认 200）逐页渲染并识别。
+- PNG / JPG 直接识别；未启用 OCR 时图片上传返回 400。
+- 页数超过 `KING_AI_OCR_MAX_PAGES`（默认 30）会被拒绝，需拆分后上传。
+- 单页识别超时由 `KING_AI_OCR_TIMEOUT_SECONDS`（默认 120）控制；单页失败只记录告警，全部失败时回退 PDF 文本层。
+
+其他语言需要自定义镜像并安装对应 `tesseract-ocr-data-*` 包，然后调整 `KING_AI_OCR_LANGUAGES`。
+
+### 4.11 许可证与 air-gap
+
+许可证文件格式、Ed25519 签名步骤见 [deploy/airgap/license/README.md](../deploy/airgap/license/README.md)。Compose 部署将文件放在 `KING_AI_LICENSE_DIR`（默认 `./deploy/airgap/license`），容器内路径为 `/app/license/license.json`：
+
+```bash
+KING_AI_LICENSE_ENABLED=true
+KING_AI_LICENSE_FILE=/app/license/license.json
+# PEM 含换行，写入 .env 时使用单行 Base64：
+# KING_AI_LICENSE_PUBLIC_KEY=$(base64 -w0 license-public-key.pem)
+```
+
+`KING_AI_LICENSE_PUBLIC_KEY` 也接受完整 PEM 文本（通过 shell 环境或 Secret 注入，不要写进 `.env`），以及 32 字节原始公钥的 Base64。
+
+- 启用后，许可证缺失、签名无效或已过期都会阻止应用启动。
+- 创建空间、用户与智能体前会校验容量上限，超限返回 403；SSO 自动建号同样受限。
+- `GET /api/license` 仅管理员可访问，返回签发方、有效期、上限、当前用量与特性；未启用时状态为 `DISABLED`。
+- Helm 部署通过 `api.license.enabled`、`api.license.existingSecret`、`api.license.secretKey` 与 `api.license.publicKey` 挂载 Secret，示例见 chart README。
+
+离线交付使用 `deploy/airgap/build-bundle.sh` 打包镜像、Chart、Compose、迁移 SQL 与 License 工具，在目标机用 `load-images.sh` 校验并导入；完整流程见 [deploy/airgap/README.md](../deploy/airgap/README.md)。
+
 ## 5. 可观测性
 
 ### 5.1 信号端点
@@ -398,6 +510,19 @@ helm upgrade --install king-ai deploy/helm/king-ai -n king-ai \
   --wait --timeout 15m
 ```
 
+启用离线许可证时额外创建 Secret，并把公钥传给 Chart（`--set-file` 便于保留 PEM 换行）：
+
+```bash
+kubectl create secret generic king-ai-license -n king-ai \
+  --from-file=license.json=./license.json
+helm upgrade --install king-ai deploy/helm/king-ai -n king-ai \
+  -f prod-values.yaml \
+  --set api.license.enabled=true \
+  --set api.license.existingSecret=king-ai-license \
+  --set-file api.license.publicKey=license-public-key.pem \
+  --wait --timeout 15m
+```
+
 发布顺序：`pre-install/pre-upgrade` 迁移 Job → API/UI 滚动更新。Job 失败时 Helm 停止，不继续滚动。
 `persistence.exports.mode=pvc` 需要 ReadWriteMany 存储；只有 RWO 时将 API 限制为单副本，或设置 `api.export.storage=s3` 使用对象存储（见 chart README「合规导出存储」）。
 SSE 在 Pod 滚动升级期间会被终止，断线恢复属于 P2-2；Ingress 已关闭缓冲并设置 600 秒超时。
@@ -441,6 +566,12 @@ deploy/backup/restore-drill.sh
 | V9 | 内容合规设置 | G0-1/G0-2 |
 | V10 | 保留策略、法律保留、导出任务 | G0-3/G0-4 |
 | V11 | 访问复核、`last_login_at`、`api_key_rotated_at` | G0-3/G0-4 |
+| V12 | 消息增量落库 | Sprint 2 |
+| V13 | 用量账本与空间配额 | Sprint 2 |
+| V14 | 空间与智能体逻辑删除 | Sprint 2 |
+| V15 | 发布审批、灰度与评测用例 | Sprint 3 |
+| V16 | MFA 字段与 OIDC 身份绑定 | Sprint 3 |
+| V17 | MCP OAuth 配置与令牌 | Sprint 3 |
 
 Helm 只执行镜像内 Flyway；迁移文件必须随 API 镜像发布。
 
@@ -454,6 +585,10 @@ Helm 只执行镜像内 Flyway；迁移文件必须随 API 镜像发布。
 - 首次登录后立即修改管理员密码；为成员分配最小必要空间角色。
 - 定期检查审计日志、登录失败指标与公开对话限流命中情况。
 - 生产关闭 `KING_AI_DEMO_ENABLED`，不要保留演示智能体、Mock 供应商或演示 MCP。
+- 建议启用 MFA 并为管理员与空间 `OWNER` 强制绑定 TOTP；启用 SSO 时确认 `KING_AI_OIDC_REDIRECT_URI` 使用 HTTPS 且与 IdP 注册值完全一致。
+- 启用 `KING_AI_LICENSE_ENABLED` 前先验证公钥与许可证签名；许可证文件与公钥应通过 Secret 挂载，不要写入镜像。
+- OCR 会增加 CPU 与内存占用并调用本地二进制，只应在受信服务器开启；如需其他语言包，构建自定义镜像而不是在运行时安装。
+- 离线交付包通过 `SHA256SUMS` 校验后再导入镜像；`--skip-checksum` 仅用于紧急恢复。
 - 定期执行依赖与镜像扫描；CI 会执行后端测试、前端构建、Trivy 漏洞/密钥/配置扫描并产出 SBOM。
 
 ### 内容合规与 PII 脱敏
@@ -485,7 +620,7 @@ Helm 只执行镜像内 Flyway；迁移文件必须随 API 镜像发布。
 - 报告包含成员角色/最近登录、供应商密钥轮换时间、MCP 配置更新时间、公开智能体。
 - 成员可确认/降级/移除；供应商/MCP/公开智能体只能确认或知悉，实际变更到对应模块执行。
 - 降级阶梯：OWNER→ADMIN→EDITOR→VIEWER；AUDITOR→VIEWER；VIEWER 不可再降。
-- 多实例/Helm 部署：`@Scheduled` 在每个实例都会触发，当前未加分布式锁；只让一个实例启用调度（其余实例把 `KING_AI_ACCESS_REVIEW_CRON` 设为 `-` 关闭调度，或由外部调度器单点调用），否则并发触发可能生成重复 OPEN 复核。Helm 部署阶段需固定调度副本数或补充数据库锁。
+- 多实例/Helm 部署：季度任务通过 `JobLock` 抢占跨实例锁，未取得锁的实例跳过本轮，避免生成重复 OPEN 复核；也可将 `KING_AI_ACCESS_REVIEW_CRON` 设为 `-` 关闭自动生成。
 
 ## 9. 故障排查
 
@@ -494,6 +629,7 @@ Helm 只执行镜像内 Flyway；迁移文件必须随 API 镜像发布。
 - `未配置 KING_AI_SECRET` / `长度不能少于 32 个字符`：检查生产环境变量。
 - `必须配置 KING_AI_ENCRYPTION_KEY`：生成独立密钥，不能与签名密钥相同。
 - `未检测到系统管理员`：设置 `KING_AI_ADMIN_USERNAME` 与强密码；已存在管理员时不会重复创建。
+- `许可证无效，拒绝启动`：检查 `KING_AI_LICENSE_FILE` 是否挂载、公钥是否与签名密钥匹配、许可证是否过期；确认后重启。
 - Flyway 迁移失败：检查 `flyway_schema_history`、数据库账号权限与迁移日志；不要手工修改历史记录。
 
 ### 健康检查失败
@@ -508,9 +644,14 @@ Helm 只执行镜像内 Flyway；迁移文件必须随 API 镜像发布。
 - SSE 首字慢：确认 Nginx 对 `/api/` 关闭 `proxy_buffering`，并适当提高 `proxy_read_timeout`。
 - 工具调用等待确认：检查前端是否展示 `tool_approval` 事件，确认接口是否在 120 秒内调用。
 - 模型持续失败：查看 `retry` / `degraded` 事件与熔断指标；确认供应商地址、密钥和出站 allowlist。
+- 发布被 409 拒绝：`KING_AI_RELEASE_REQUIRE_APPROVAL=true` 时不能直接发布，改为 `POST /api/agents/{id}/release/submit`；审批通过后再灰度或正式发布。
+- 审批被拒绝：确认审批人不是提交人，且最近一次评测得分达到 `KING_AI_RELEASE_EVAL_PASS_SCORE`。
+- OCR 返回 400 或超时：确认镜像内有 `tesseract` 与对应语言包、`KING_AI_OCR_LANGUAGES` 正确，扫描件页数未超过 `KING_AI_OCR_MAX_PAGES`；可提高 `KING_AI_OCR_TIMEOUT_SECONDS` 或降低 `KING_AI_OCR_RENDER_DPI`。
 
 ### 前端无法登录或写操作被拒绝
 
 - 检查浏览器是否允许 Cookie（`HttpOnly` + `Secure` + `SameSite=Lax`）。
 - HTTPS 部署必须设置 `KING_AI_COOKIE_SECURE=true`；本地 HTTP 开发设置为 `false`。
 - 跨域部署时配置 `KING_AI_ALLOWED_ORIGINS`，并确保反向代理正确传递 `Host`、`X-Forwarded-*`。
+- SSO 回调失败：确认回调地址、客户端 ID/密钥与 IdP 一致，服务器可访问 issuer 的发现文档与 JWKS；登录页上的 `sso_error` 会给出具体原因。若 IdP 使用自签证书，需要把 CA 导入 API 容器的信任库。
+- MFA 动态码无效：检查服务器时间是否同步（TOTP 依赖时间窗口）；挑战过期后重新输入密码。恢复码用尽前应重新绑定认证器。

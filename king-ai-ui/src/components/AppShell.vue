@@ -10,6 +10,7 @@ import {
   Connection,
   Cpu,
   DocumentChecked,
+  Key,
   Lock,
   MagicStick,
   Memo,
@@ -21,6 +22,7 @@ import {
   User,
 } from '@element-plus/icons-vue'
 import BrandLogo from './BrandLogo.vue'
+import MfaSettingsDialog from './MfaSettingsDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi, systemApi } from '@/api'
 import { ApiError } from '@/api/http'
@@ -34,6 +36,7 @@ const mobileOpen = ref(false)
 const online = ref(true)
 const pwdVisible = ref(false)
 const pwdLoading = ref(false)
+const mfaVisible = ref(false)
 const pwdForm = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 
 interface NavItem {
@@ -93,6 +96,7 @@ const navGroups = computed<NavGroup[]>(() => [
     items: [
       { name: 'users', label: '用户管理', icon: User, admin: true },
       { name: 'spaces', label: '空间管理', icon: OfficeBuilding, admin: true },
+      { name: 'license', label: '平台许可', icon: Key, admin: true },
     ],
   },
 ])
@@ -135,6 +139,9 @@ function handleUserCommand(command: string) {
     pwdForm.newPassword = ''
     pwdForm.confirm = ''
     pwdVisible.value = true
+  }
+  if (command === 'mfa') {
+    mfaVisible.value = true
   }
   if (command === 'logout') {
     auth.logout().finally(() => router.replace({ name: 'login' }))
@@ -251,6 +258,10 @@ onBeforeUnmount(() => {
                 <el-icon><Lock /></el-icon>
                 修改密码
               </el-dropdown-item>
+              <el-dropdown-item command="mfa">
+                <el-icon><Key /></el-icon>
+                账号安全
+              </el-dropdown-item>
               <el-dropdown-item command="logout" divided>
                 <el-icon><SwitchButton /></el-icon>
                 退出登录
@@ -287,6 +298,10 @@ onBeforeUnmount(() => {
                 <el-dropdown-item command="password">
                   <el-icon><Lock /></el-icon>
                   修改密码
+                </el-dropdown-item>
+                <el-dropdown-item command="mfa">
+                  <el-icon><Key /></el-icon>
+                  账号安全
                 </el-dropdown-item>
                 <el-dropdown-item command="logout" divided>
                   <el-icon><SwitchButton /></el-icon>
@@ -327,6 +342,8 @@ onBeforeUnmount(() => {
         <el-button type="primary" :loading="pwdLoading" @click="submitPassword">确认修改</el-button>
       </template>
     </el-dialog>
+
+    <MfaSettingsDialog v-model="mfaVisible" />
   </div>
 </template>
 

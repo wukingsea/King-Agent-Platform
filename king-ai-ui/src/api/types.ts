@@ -70,14 +70,38 @@ export interface SpaceMemberUpdate {
 
 export interface AuthResponse {
   token?: string
-  user: UserView
+  user: UserView | null
   spaces: SpaceView[]
   currentSpaceId?: number
+  mfaRequired?: boolean
+  mfaChallenge?: string | null
 }
 
 export interface ChangePasswordRequest {
   oldPassword: string
   newPassword: string
+}
+
+export interface SsoConfig {
+  enabled: boolean
+  loginUrl?: string | null
+  issuer?: string | null
+}
+
+export interface MfaStatusView {
+  enabled: boolean
+  pending: boolean
+  enrolledAt?: string | null
+  recoveryCodesRemaining: number
+}
+
+export interface MfaSetupResponse {
+  secret: string
+  otpauthUrl: string
+}
+
+export interface MfaEnableResponse {
+  recoveryCodes: string[]
 }
 
 export interface AgentView {
@@ -105,11 +129,52 @@ export interface AgentView {
   updatedAt?: string
 }
 
+export type ReleaseStatus =
+  | 'DRAFT'
+  | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'CANARY'
+  | 'PUBLISHED'
+  | 'REJECTED'
+  | 'ARCHIVED'
+
 export interface AgentVersionView {
   versionNo: number
+  status: ReleaseStatus
   publishedAt: string
   publishedBy?: number
+  requestedBy?: number | null
+  requestedAt?: string | null
+  approvedBy?: number | null
+  approvedAt?: string | null
+  reviewComment?: string | null
+  canaryPercent?: number | null
+  evalTotal?: number | null
+  evalPassed?: number | null
+  evalScore?: number | null
+  evalSummary?: string | null
+  evalRunAt?: string | null
+  configHash?: string | null
   current: boolean
+}
+
+export interface AgentEvalCaseView {
+  id: number
+  agentId: number
+  name: string
+  prompt: string
+  expectedKeywords: string
+  weight: number
+  status: number
+  createdAt: string
+}
+
+export interface AgentEvalCaseSaveRequest {
+  name: string
+  prompt: string
+  expectedKeywords: string
+  weight: number
+  status: number
 }
 
 export interface AgentOption {
@@ -283,6 +348,8 @@ export interface KnowledgeDocTextRequest {
   content: string
 }
 
+export type McpAuthType = 'NONE' | 'OAUTH2'
+
 export interface McpView {
   id: number
   spaceId: number
@@ -290,6 +357,13 @@ export interface McpView {
   transport?: string
   url: string
   headersConfigured: boolean
+  authType?: McpAuthType
+  oauthTokenUrl?: string
+  oauthClientId?: string
+  oauthScopes?: string
+  clientSecretConfigured?: boolean
+  tokenObtained?: boolean
+  oauthExpiresAt?: string | null
   status: number
   remark?: string
   agentCount: number
@@ -301,6 +375,11 @@ export interface McpSaveRequest {
   transport?: string
   url: string
   headers?: string
+  authType?: McpAuthType
+  oauthTokenUrl?: string
+  oauthClientId?: string
+  oauthClientSecret?: string
+  oauthScopes?: string
   status?: number
   remark?: string
 }
@@ -549,6 +628,29 @@ export interface HealthStatus {
 
 export interface PublicMeta {
   demoEnabled: boolean
+}
+
+export type LicenseState = 'ACTIVE' | 'EXPIRED' | 'DISABLED'
+
+export interface LicenseStatusView {
+  enabled: boolean
+  status: LicenseState
+  licenseId?: string | null
+  customer?: string | null
+  edition?: string | null
+  issuedAt?: string | null
+  expiresAt?: string | null
+  limits: {
+    maxSpaces: number
+    maxUsers: number
+    maxAgents: number
+  } | null
+  usage: {
+    spaces: number
+    users: number
+    agents: number
+  }
+  features: string[]
 }
 
 export type RetentionType = 'SESSION' | 'MESSAGE' | 'AUDIT' | 'EXPORT'

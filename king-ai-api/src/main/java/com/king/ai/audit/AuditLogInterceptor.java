@@ -18,6 +18,8 @@ public class AuditLogInterceptor implements AsyncHandlerInterceptor {
 
     private static final Set<String> EXCLUDED_PREFIXES = Set.of(
             "/api/auth/login",
+            "/api/auth/mfa/verify",
+            "/api/auth/oidc/",
             "/api/public/",
             "/api/demo/",
             "/api/chat/",

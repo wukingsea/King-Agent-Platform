@@ -21,6 +21,9 @@ data:
   KING_AI_FINOPS_CURRENCY: {{ .Values.api.finops.currency | default "USD" | quote }}
   KING_AI_FINOPS_DEFAULT_INPUT_PRICE: {{ .Values.api.finops.defaultInputPricePerMillion | default 0 | quote }}
   KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE: {{ .Values.api.finops.defaultOutputPricePerMillion | default 0 | quote }}
+  KING_AI_LICENSE_ENABLED: {{ .Values.api.license.enabled | default false | quote }}
+  KING_AI_LICENSE_FILE: {{ ternary (printf "%s/license.json" (.Values.api.license.mountPath | default "/app/license")) "" .Values.api.license.enabled | quote }}
+  KING_AI_LICENSE_PUBLIC_KEY: {{ .Values.api.license.publicKey | default "" | quote }}
   JAVA_OPTS: {{ .Values.api.javaOpts | quote }}
   OTEL_TRACING_EXPORT_ENABLED: {{ .Values.observability.tracing.enabled | quote }}
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: {{ .Values.observability.tracing.endpoint | quote }}

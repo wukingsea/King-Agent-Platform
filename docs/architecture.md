@@ -75,11 +75,13 @@ flowchart TB
 | `compliance` | 内容审核与 PII 脱敏、留存策略、法律保留、数据导出、访问复核 |
 | `config` | 配置属性、运行时 Bean、演示数据引导 |
 | `finops` | 用量账本、价格表、空间月度 Token 配额与用量查询 |
-| `knowledge` | 知识库、文档、分片、Embedding、向量存储适配、检索 |
+| `knowledge` | 知识库、文档、分片、Embedding、向量存储适配、检索、OCR 适配 |
+| `license` | Ed25519 离线许可证校验、容量统计与执行、许可证状态接口 |
 | `llm` | LLM 抽象、OpenAI 兼容客户端、Mock 客户端、工具调用模型 |
-| `mcp` | MCP 服务管理、JSON-RPC 客户端、演示 MCP 服务 |
+| `mcp` | MCP 服务管理、JSON-RPC 客户端、OAuth 令牌管理、演示 MCP 服务 |
 | `model` | 供应商与模型配置、模型解析、连通性测试与导入 |
 | `skill` | 技能元数据、文件树、锁定的 SKILL.md、参考文件读取 |
+| `sso` | OIDC 发现、授权码换取、ID Token 校验、state/nonce 签名与角色映射 |
 | `system` | 用户与空间管理、成员授权 |
 
 ### 3.1 运行环境适配
@@ -120,6 +122,21 @@ Mock 模型使用字符二元组哈希生成 256 维确定性向量，并对中�
 - 已归档空间的公开智能体立即下线；启动引导（`AdminBootstrap`）若发现配置的默认空间已归档，会原地恢复该空间，避免启动失败。
 - 空间编码在归档后仍被占用，唯一索引不变；如需复用编码，应由数据库管理员在确认合规要求后手动清理归档行。
 
+### 3.5 发布治理
+
+- 版本状态机：`DRAFT -> PENDING_REVIEW -> APPROVED -> CANARY -> PUBLISHED`，驳回为 `REJECTED`，归档版本为 `ARCHIVED`。每次状态变更都写入不可变 `king_ai_agent_version` 行与审计日志。
+- 提交审批生成配置快照（含提示词、模型、绑定与工具白名单）与 `config_hash`；审批通过要求审批人不是提交人，且存在启用用例时最近一次评测达到 `release.eval-pass-score`。
+- 评测用例保存在 `king_ai_agent_eval_case`，评测按关键词命中与权重计算得分，结果（总数、通过数、得分、摘要、时间）写回版本行。
+- 灰度只允许 `APPROVED` / `CANARY` 版本，比例 1–99；正式发布把版本置为 `PUBLISHED` 并同步智能体 `publish_status` / `published_version`。回滚复用历史版本快照生成新版本。
+- `release.require-approval=false` 时提交直接发布；直接调用旧发布接口会返回 409，必须走统一提交通道。
+
+### 3.6 许可证与容量
+
+- `LicenseService` 在启动时读取 `king-ai.license.file`，用 Ed25519 公钥校验签名、许可证 ID、客户与过期时间；启用后任何校验失败都会阻止应用启动。
+- 许可证声明 `maxSpaces`、`maxUsers`、`maxAgents` 与特性列表；创建空间、用户（含 SSO 首次登录）与智能体前调用容量检查，超限返回 403。
+- `GET /api/license` 仅管理员可访问，返回状态、签发方、有效期、上限、当前用量与特性；未启用时返回 `DISABLED` 且 `limits` 为空。
+- 校验为请求前近似判断：并发创建可能同时通过，适合离线交付的容量约束，不替代数据库唯一约束。
+
 ## 4. 认证与空间隔离
 
 - 登录成功后生成随机不透明 Token，服务端存储 Token 与用户 ID 的映射，默认有效期 7 天。
@@ -131,6 +148,9 @@ Mock 模型使用字符二元组哈希生成 256 维确定性向量，并对中�
 - 管理接口通过 `@RequireAdmin` 限制平台管理员。
 - 供应商 API Key 与 MCP 请求头使用 AES-GCM 加密存储，读取接口只返回掩码。
 - 登录失败按「用户名 + 来源 IP」计数，5 次后锁定 5 分钟，累计 10 次锁 30 分钟、15 次锁 2 小时；同一账号 1 小时内跨 IP 失败 20 次或同一 IP 10 分钟内失败 30 次会分别触发账号/IP 级锁定。
+- MFA：启用后密码校验通过只返回短时 `mfaChallenge`（默认 5 分钟）与空用户，调用 `/api/auth/mfa/verify` 校验 TOTP 或一次性恢复码后才签发会话。TOTP 密钥与恢复码哈希使用 AES-GCM 加密存储。
+- SSO：`/api/auth/oidc/authorize` 生成带签名 state 与 nonce 的授权跳转；`/api/auth/oidc/callback` 换取 ID Token，校验签名、issuer、audience 与 nonce 后绑定 `king_ai_user_identity`。首次登录可按邮箱合并已有账号或自动创建用户，并受许可证用户容量约束。
+- 角色映射：`role-claim` 中的 `ADMIN` 或 `space-code:EDITOR` 会授予对应空间角色；映射只提升不降级，平台管理员账号不受影响。成功后跳转默认 `/#/dashboard`，失败带 `sso_error` 返回登录页。
 
 ```mermaid
 sequenceDiagram
@@ -210,6 +230,7 @@ SSE 事件由 `ChatRuntime` 统一发送：`meta`、`citation`、`reasoning`、`
 ```text
 文档导入（文本 / 上传）
   -> 解析文本（TXT、Markdown、PDF）
+  -> 扫描件 / 图片：Tesseract OCR（可选，按页渲染与识别）
   -> 按段落与句子边界分片
   -> 创建持久化索引任务（king_ai_knowledge_index_job）
   -> 批量为分片生成向量
@@ -217,6 +238,7 @@ SSE 事件由 `ChatRuntime` 统一发送：`meta`、`citation`、`reasoning`、`
   -> 更新文档状态与分片数
 ```
 
+- OCR：文本层字符数低于 `min-text-chars-per-page * pages` 的 PDF 视为扫描件，按 `render-dpi` 渲染每页后调用 `tesseract ... stdout`；支持 PNG / JPG 直接识别。页数超过 `max-pages` 时拒绝上传，单页失败只记录告警，全部失败时回退原始文本层。
 - 文档状态：`PENDING`、`PROCESSING`、`READY`、`FAILED`。
 - 索引任务由后台 Worker 轮询领取，支持重试、退避、永久失败、超时任务恢复与对账；进程重启不会丢失。
 - 向量集合按嵌入维度共享：默认 `king_ai_chunks_v2_<dim>`，包含 `chunk_id`、`doc_id`、`space_id`、`kb_id` 与向量字段。
@@ -242,7 +264,8 @@ SSE 事件由 `ChatRuntime` 统一发送：`meta`、`citation`、`reasoning`、`
 - 工具命名：对外暴露为 `mcp{serverId}_{toolName}`，清洗非法字符并保证同名冲突时自动加后缀。
 - 会话：客户端保留 `Mcp-Session-Id`，并在后续请求中回传。
 - 缓存：按服务地址与配置指纹缓存客户端，配置变更或调用失败时失效，避免每次对话重新 initialize。
-- 安全：请求头加密存储且只回显掩码；工具调用受智能体白名单、参数校验、人工确认与审计约束。
+- OAuth：`authType=OAUTH2` 时使用客户端凭证模式向 `oauthTokenUrl` 换取令牌，按 `oauthScopes` 请求权限，过期前自动刷新；客户端密钥加密存储且只写不读，配置变更会清空已获取令牌。
+- 安全：请求头与 OAuth 密钥加密存储且只回显掩码；工具调用受智能体白名单、参数校验、人工确认与审计约束。
 
 ## 8. SKILL 设计
 
@@ -280,7 +303,7 @@ erDiagram
     CHAT_SESSION ||--o{ CHAT_MESSAGE : contains
 ```
 
-所有业务表包含 `space_id`（技能文件、消息等通过父表继承空间），查询与写入由服务层强制带上空间条件。会话表额外记录 `source_type`（`ADMIN` / `PUBLIC`）、`owner_user_id` 与 `visitor_id`，用于区分管理端会话与访客会话。Agent 发布使用不可变版本表 `king_ai_agent_version`，支持回滚与历史补录；审计日志、索引任务与用量账本 `king_ai_usage_ledger` 分别独立持久化。`king_ai_space` 与 `king_ai_agent` 以 `deleted_at` 实现逻辑删除，历史会话与用量记录因此始终能追溯到已归档的空间和智能体。
+所有业务表包含 `space_id`（技能文件、消息等通过父表继承空间），查询与写入由服务层强制带上空间条件。会话表额外记录 `source_type`（`ADMIN` / `PUBLIC`）、`owner_user_id` 与 `visitor_id`，用于区分管理端会话与访客会话。Agent 发布使用不可变版本表 `king_ai_agent_version`（记录状态机、提交/审批人、灰度比例、评测结果与配置哈希），评测用例存于 `king_ai_agent_eval_case`；审计日志、索引任务与用量账本 `king_ai_usage_ledger` 分别独立持久化。身份侧新增 `king_ai_user_identity`（OIDC 绑定）与用户表上的 MFA 字段；MCP 服务表增加 OAuth 客户端配置与令牌字段。`king_ai_space` 与 `king_ai_agent` 以 `deleted_at` 实现逻辑删除，历史会话与用量记录因此始终能追溯到已归档的空间和智能体。
 
 ## 10. 前端结构
 
@@ -288,7 +311,7 @@ erDiagram
 src/
 ├── api/            # 按域拆分的 HTTP 客户端与类型
 ├── components/     # 布局、空状态、Markdown、聊天组件
-├── pages/          # 登录、概览、智能体、对话、记录、知识库、MCP、技能、模型、合规中心、审计日志、用户、空间、公开页
+├── pages/          # 登录、概览、智能体、对话、记录、知识库、MCP、技能、模型、合规中心、审计日志、用户、空间、平台许可、公开页
 ├── stores/         # Pinia：登录态、当前用户、当前空间
 ├── router/         # Hash 路由与登录守卫
 ├── utils/          # 时间、文本、格式化
@@ -339,8 +362,10 @@ Nginx 对 `/api/` 关闭代理缓冲并延长读写超时，保证 SSE 增量实
 - 本地向量存储为应用内暴力检索，按页扫描并限制单次扫描行数（默认 20 万），不适合生产规模。
 - Milvus 共享 collection 以 `space_id` 为分区键、按嵌入维度拆分集合；从旧版每知识库集合切换到共享模式后，需要重新索引已有知识库才能检索到旧向量。
 - 内存 Token 存储、限流与并发守卫仅适用于单实例开发；生产使用 Redis 实现。
-- 知识库文件解析支持文本型 PDF，尚未接入 OCR 处理扫描件。
-- MCP 客户端未实现 OAuth 授权流程，当前支持自定义请求头与静态 Token。
-- Agent 发布支持不可变版本与回滚，但发布审批、灰度与自动评测尚未实现。
-- 合规能力（PII 脱敏、内容审核、留存策略、法律保留、数据导出、访问复核、审计日志）已内置；Helm Chart 位于 `deploy/helm/king-ai`，air-gap 离线安装包与许可证机制尚未实现。
+- OCR 依赖部署环境中的 `tesseract` 与语言包，默认关闭；扫描 PDF 超过 `max-pages` 会被拒绝，OCR 质量取决于语言包与渲染 DPI。
+- MCP OAuth 仅支持客户端凭证模式，不覆盖授权码模式、动态客户端注册或按用户授权。
+- Agent 发布审批为单级四眼复核，灰度按固定百分比路由；尚不支持定时放量、按指标自动晋级或自动回滚。评测基于关键词命中，不等同于完整质量评估。
+- SSO 仅支持 OIDC 授权码流程，不含 SCIM 同步、SAML 或 IdP 单点登出；MFA 仅支持 TOTP 与一次性恢复码。
+- 合规能力（PII 脱敏、内容审核、留存策略、法律保留、数据导出、访问复核、审计日志）已内置；Helm Chart 位于 `deploy/helm/king-ai`，air-gap 打包脚本位于 `deploy/airgap`。离线包不含操作系统软件源镜像，OCR 等系统依赖需提前打入镜像。
+- 许可证容量为请求前近似判断，并发创建可能同时通过；许可证失效会阻止启动，但运行期过期只在后续容量检查时拒绝。
 - 用量账本按请求写入，配额为请求前近似判断，并发请求可能同时通过；成本为按配置单价的估算值，对账仍以供应商账单为准。

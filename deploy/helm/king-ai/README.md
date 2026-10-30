@@ -117,6 +117,58 @@ helm upgrade king-ai deploy/helm/king-ai -n king-ai \
 - `api.finops.quotaEnabled`（默认 `true`）控制空间月度 Token 配额用尽后是否阻断对话；`api.finops.currency` 与 `api.finops.defaultInputPricePerMillion` / `defaultOutputPricePerMillion` 决定账本币种与默认估算单价。
 - 每个空间的配额存放在数据库列 `monthly_token_quota`，由空间 `OWNER` 通过 `PUT /api/finops/quota` 设置，调整配额不需要改 values 或重启。
 
+## SSO、MFA、OCR 与发布治理
+
+这些能力通过 `api.extraEnv` / `api.extraEnvFrom` 注入，避免把客户端密钥写进 ConfigMap：
+
+```bash
+kubectl create secret generic king-ai-sso -n king-ai \
+  --from-literal=client-secret='<oidc-client-secret>'
+```
+
+```yaml
+api:
+  extraEnv:
+    - name: KING_AI_SSO_ENABLED
+      value: "true"
+    - name: KING_AI_OIDC_ISSUER
+      value: "https://idp.example.com"
+    - name: KING_AI_OIDC_CLIENT_ID
+      value: "king-ai"
+    - name: KING_AI_OIDC_CLIENT_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: king-ai-sso
+          key: client-secret
+    - name: KING_AI_OIDC_REDIRECT_URI
+      value: "https://ai.example.com/api/auth/oidc/callback"
+    - name: KING_AI_MFA_ENABLED
+      value: "true"
+    - name: KING_AI_OCR_ENABLED
+      value: "true"
+    - name: KING_AI_RELEASE_REQUIRE_APPROVAL
+      value: "true"
+```
+
+- 回调地址必须与 IdP 注册值完全一致；集群需能访问 issuer 的发现文档与 JWKS。
+- API 镜像已包含 `tesseract` 与 `chi_sim`/`eng` 语言包；其他语言需构建自定义镜像。
+- 发布审批、灰度与评测不依赖额外配置，未设置时使用默认值（审批开启、通过分 0.8）。
+
+## 离线许可证
+
+```bash
+kubectl create secret generic king-ai-license -n king-ai \
+  --from-file=license.json=./license.json
+helm upgrade king-ai deploy/helm/king-ai -n king-ai \
+  --set api.license.enabled=true \
+  --set api.license.existingSecret=king-ai-license \
+  --set-file api.license.publicKey=license-public-key.pem
+```
+
+- `api.license.mountPath` 默认 `/app/license`，Secret 键由 `api.license.secretKey` 指定（默认 `license.json`）。
+- 启用后许可证缺失、签名无效或已过期都会让 API 启动失败；容量上限在创建空间/用户/智能体时校验。
+- 状态可通过管理员接口 `GET /api/license` 查看。
+
 ## 备份与恢复
 - API 的导出 PVC 路径为 `/app/data/exports`，对应 values `persistence.exports`；使用 `storage=s3` 时导出文件在对象存储中，应纳入对象存储的备份策略。
 - 备份脚本不打包进 chart；使用 `deploy/backup` 与 `deploy/backup/README.md`。

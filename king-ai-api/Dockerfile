@@ -10,6 +10,9 @@ RUN mvn -B -q -pl king-ai-api -am package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 
+# OCR escape hatch: tesseract is only invoked when KING_AI_OCR_ENABLED=true.
+RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-eng tesseract-ocr-data-chi_sim
+
 RUN addgroup -S king && adduser -S king -G king
 WORKDIR /app
 

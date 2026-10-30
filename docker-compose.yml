@@ -100,6 +100,7 @@ services:
       start_period: 120s
 
   api:
+    image: ${KING_AI_API_IMAGE:-king-ai-api:local}
     build:
       context: .
       dockerfile: king-ai-api/Dockerfile
@@ -153,6 +154,21 @@ services:
       KING_AI_FINOPS_CURRENCY: ${KING_AI_FINOPS_CURRENCY:-USD}
       KING_AI_FINOPS_DEFAULT_INPUT_PRICE: ${KING_AI_FINOPS_DEFAULT_INPUT_PRICE:-0}
       KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE: ${KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE:-0}
+      # Offline license (Ed25519). Put license.json next to this compose file and
+      # set KING_AI_LICENSE_ENABLED=true; an invalid license blocks startup.
+      KING_AI_LICENSE_ENABLED: ${KING_AI_LICENSE_ENABLED:-false}
+      KING_AI_LICENSE_FILE: ${KING_AI_LICENSE_FILE:-/app/license/license.json}
+      KING_AI_LICENSE_PUBLIC_KEY: ${KING_AI_LICENSE_PUBLIC_KEY:-}
+      # SSO / MFA / OCR (Sprint 3 enterprise capabilities).
+      KING_AI_SSO_ENABLED: ${KING_AI_SSO_ENABLED:-false}
+      KING_AI_OIDC_ISSUER: ${KING_AI_OIDC_ISSUER:-}
+      KING_AI_OIDC_CLIENT_ID: ${KING_AI_OIDC_CLIENT_ID:-}
+      KING_AI_OIDC_CLIENT_SECRET: ${KING_AI_OIDC_CLIENT_SECRET:-}
+      KING_AI_OIDC_REDIRECT_URI: ${KING_AI_OIDC_REDIRECT_URI:-}
+      KING_AI_OIDC_DEFAULT_SPACE_CODE: ${KING_AI_OIDC_DEFAULT_SPACE_CODE:-}
+      KING_AI_OIDC_DEFAULT_ROLE: ${KING_AI_OIDC_DEFAULT_ROLE:-VIEWER}
+      KING_AI_MFA_ENABLED: ${KING_AI_MFA_ENABLED:-true}
+      KING_AI_OCR_ENABLED: ${KING_AI_OCR_ENABLED:-false}
       JAVA_OPTS: "${JAVA_OPTS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}"
       TZ: Asia/Shanghai
     depends_on:
@@ -164,6 +180,10 @@ services:
         condition: service_healthy
     ports:
       - "${API_BIND:-127.0.0.1}:${API_PORT:-8080}:8080"
+    volumes:
+      # Directory mount: dropping license.json in makes licensing work without
+      # recreating the container. Ignored while KING_AI_LICENSE_ENABLED=false.
+      - ${KING_AI_LICENSE_DIR:-./deploy/airgap/license}:/app/license:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health/readiness >/dev/null || exit 1"]
       interval: 30s
@@ -172,6 +192,7 @@ services:
       start_period: 60s
 
   ui:
+    image: ${KING_AI_UI_IMAGE:-king-ai-ui:local}
     build:
       context: .
       dockerfile: king-ai-ui/Dockerfile
