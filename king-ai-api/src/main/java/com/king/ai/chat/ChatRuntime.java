@@ -23,6 +23,7 @@ import com.king.ai.compliance.ModerationService;
 import com.king.ai.compliance.RedactionResult;
 import com.king.ai.compliance.RedactionService;
 import com.king.ai.config.KingAiProperties;
+import com.king.ai.finops.UsageLedger;
 import com.king.ai.knowledge.KnowledgeService;
 import com.king.ai.knowledge.dto.RetrievedChunk;
 import com.king.ai.llm.CancellationToken;
@@ -109,6 +110,7 @@ public class ChatRuntime {
     private final ChatInputCompliance chatInputCompliance;
     private final RedactionService redactionService;
     private final ModerationService moderationService;
+    private final UsageLedger usageLedger;
     private final ObjectMapper objectMapper;
     private final KingAiProperties properties;
     private final MeterRegistry meterRegistry;
@@ -165,6 +167,15 @@ public class ChatRuntime {
                     "action", "warn", "category", "BLOCKLIST").increment();
         }
         ModelRuntimeService.ResolvedModel resolved = modelRuntimeService.resolveChat(spaceId, agent.modelId());
+        try {
+            usageLedger.requireQuota(spaceId);
+        } catch (BizException ex) {
+            ChatAuditContext audit = captureAuditContext();
+            auditLogService.recordEvent(spaceId, actor.userId(), actor.displayName(),
+                    "chat.quota_rejected", "chat", null, AuditLogService.STATUS_DENIED,
+                    "reason=monthly_token_quota", audit.ip(), audit.userAgent(), audit.requestId());
+            throw ex;
+        }
         chatMetrics.request(sourceTag(sourceType));
 
         CancellationToken token = new CancellationToken();
@@ -267,7 +278,7 @@ public class ChatRuntime {
         StringBuilder reasoning = new StringBuilder();
         List<Map<String, Object>> trace = new ArrayList<>();
         List<Map<String, Object>> citations = new ArrayList<>();
-        long[] lastFlush = {startedAt};
+        StreamProgress progress = new StreamProgress(startedAt);
         String status = ChatService.STATUS_COMPLETED;
         String errorMessage = null;
         String usedModel = resolved.model().getModel();
@@ -332,7 +343,7 @@ public class ChatRuntime {
                 token.throwIfCancelled();
                 boolean allowTools = round < maxRounds && !boundTools.isEmpty();
                 StreamOutcome streamOutcome = streamChatWithRetry(resolved, messages, allowTools, toolDefinitions,
-                        agent, emitter, progressMessage, content, reasoning, trace, citations, lastFlush, token,
+                        agent, emitter, progressMessage, content, reasoning, trace, citations, progress, token,
                         contentGuard, reasoningGuard, sourceTag(sourceType));
                 LlmResult result = streamOutcome.result();
                 usedModel = streamOutcome.model();
@@ -425,7 +436,7 @@ public class ChatRuntime {
                             untrustedToolResult(call.name(),
                                     cap(toolText, properties.getChat().getMaxToolResultChars()))));
                 }
-                maybeFlush(progressMessage, content, reasoning, trace, citations, lastFlush, true);
+                maybeFlush(progressMessage, content, reasoning, trace, citations, progress, true);
             }
             // 循环结束后再 flush：轮次之间不能冲刷，否则跨轮次的手机号/身份证号
             // 会被拆成两段分别输出，脱敏窗口失效。
@@ -439,7 +450,7 @@ public class ChatRuntime {
                 reasoning.append(reasoningTail);
                 send(emitter, "reasoning", Map.of("delta", reasoningTail));
             }
-            maybeFlush(progressMessage, content, reasoning, trace, citations, lastFlush, true);
+            maybeFlush(progressMessage, content, reasoning, trace, citations, progress, true);
         } catch (ChatStreamClosedException ex) {
             token.cancel();
             status = ChatService.STATUS_STOPPED;
@@ -513,6 +524,14 @@ public class ChatRuntime {
             } finally {
                 tracing.end(persistSpan);
             }
+            try {
+                usageLedger.record(spaceId, agent.agentId(),
+                        session == null ? null : session.getId(),
+                        assistant == null ? null : assistant.getId(),
+                        usedModel, sourceType, promptTokens, completionTokens, status);
+            } catch (RuntimeException ex) {
+                log.warn("Failed to record usage ledger for space {}: {}", spaceId, ex.getMessage());
+            }
             if (assistant != null) {
                 sendQuietly(emitter, "usage", usagePayload(promptTokens, completionTokens));
                 Map<String, Object> done = new LinkedHashMap<>();
@@ -560,7 +579,7 @@ public class ChatRuntime {
                                               AgentRuntime agent, SseEmitter emitter, ChatMessage progressMessage,
                                               StringBuilder content, StringBuilder reasoning,
                                               List<Map<String, Object>> trace,
-                                              List<Map<String, Object>> citations, long[] lastFlush,
+                                              List<Map<String, Object>> citations, StreamProgress progress,
                                               CancellationToken token,
                                               ComplianceStreamGuard contentGuard,
                                               ComplianceStreamGuard reasoningGuard, String source) {
@@ -568,7 +587,7 @@ public class ChatRuntime {
                 content, reasoning, contentGuard, reasoningGuard);
         try {
             LlmResult result = streamWithRetry(resolved, messages, allowTools, toolDefinitions, agent, emitter,
-                    progressMessage, content, reasoning, trace, citations, lastFlush, token,
+                    progressMessage, content, reasoning, trace, citations, progress, token,
                     contentGuard, reasoningGuard, source);
             return new StreamOutcome(result, resolved.model().getModel());
         } catch (LlmException ex) {
@@ -580,6 +599,8 @@ public class ChatRuntime {
                             resolved.model().getModel(), fallback.model().getModel(), ex.getMessage());
                     // 降级模型会从头重放同一轮，必须先丢弃主模型的半截输出，否则前端与落库内容重复。
                     checkpoint.restore(content, reasoning, contentGuard, reasoningGuard);
+                    rollbackProgress(progressMessage, content, reasoning, progress,
+                            content.length(), reasoning.length());
                     sendQuietly(emitter, "degraded", Map.of(
                             "reason", "model_fallback",
                             "message", "主模型暂时不可用，已切换至降级模型",
@@ -588,7 +609,7 @@ public class ChatRuntime {
                             "contentLength", content.length(),
                             "reasoningLength", reasoning.length()));
                     LlmResult result = streamWithRetry(fallback, messages, allowTools, toolDefinitions, agent,
-                            emitter, progressMessage, content, reasoning, trace, citations, lastFlush, token,
+                            emitter, progressMessage, content, reasoning, trace, citations, progress, token,
                             contentGuard, reasoningGuard, source);
                     return new StreamOutcome(result, fallback.model().getModel());
                 } catch (ContentModerationException moderationEx) {
@@ -607,7 +628,7 @@ public class ChatRuntime {
                                       AgentRuntime agent, SseEmitter emitter, ChatMessage progressMessage,
                                       StringBuilder content, StringBuilder reasoning,
                                       List<Map<String, Object>> trace,
-                                      List<Map<String, Object>> citations, long[] lastFlush,
+                                      List<Map<String, Object>> citations, StreamProgress progress,
                                       CancellationToken token,
                                       ComplianceStreamGuard contentGuard,
                                       ComplianceStreamGuard reasoningGuard, String source) {
@@ -647,7 +668,7 @@ public class ChatRuntime {
                                     reasoning.append(safe);
                                     send(emitter, "reasoning", Map.of("delta", safe));
                                     maybeFlush(progressMessage, content, reasoning, trace, citations,
-                                            lastFlush, false);
+                                            progress, false);
                                 }
                             }
 
@@ -662,7 +683,7 @@ public class ChatRuntime {
                                     content.append(safe);
                                     send(emitter, "content", Map.of("delta", safe));
                                     maybeFlush(progressMessage, content, reasoning, trace, citations,
-                                            lastFlush, false);
+                                            progress, false);
                                 }
                             }
                         }, token);
@@ -683,6 +704,8 @@ public class ChatRuntime {
                     reasoning.setLength(reasoningMark);
                     contentGuard.restore(contentGuardMark);
                     reasoningGuard.restore(reasoningGuardMark);
+                    rollbackProgress(progressMessage, content, reasoning, progress,
+                            contentMark, reasoningMark);
                     sendQuietly(emitter, "retry", Map.of("attempt", attempt + 1, "reset", true,
                             "message", "模型请求失败，正在重试..."));
                     try {
@@ -1044,17 +1067,52 @@ public class ChatRuntime {
 
     private void maybeFlush(ChatMessage assistant, StringBuilder content, StringBuilder reasoning,
                             List<Map<String, Object>> trace, List<Map<String, Object>> citations,
-                            long[] lastFlush, boolean force) {
+                            StreamProgress progress, boolean force) {
         long now = System.currentTimeMillis();
-        if (!force && now - lastFlush[0] < FLUSH_INTERVAL_MS) {
+        if (!force && now - progress.lastFlushAt < FLUSH_INTERVAL_MS) {
             return;
         }
-        lastFlush[0] = now;
+        int contentLength = content.length();
+        int reasoningLength = reasoning.length();
+        String contentDelta = contentLength > progress.contentLength
+                ? content.substring(progress.contentLength) : "";
+        String reasoningDelta = reasoningLength > progress.reasoningLength
+                ? reasoning.substring(progress.reasoningLength) : "";
+        if (!force && contentDelta.isEmpty() && reasoningDelta.isEmpty()) {
+            return;
+        }
+        progress.lastFlushAt = now;
         try {
-            chatService.updateProgress(assistant.getId(), content.toString(), reasoning.toString(),
-                    toolTraceJson(trace), citationsJson(citations));
+            chatService.appendProgress(assistant.getId(), contentDelta, reasoningDelta,
+                    force ? toolTraceJson(trace) : null,
+                    force ? citationsJson(citations) : null);
+            progress.contentLength = contentLength;
+            progress.reasoningLength = reasoningLength;
         } catch (RuntimeException ex) {
             log.warn("Failed to flush chat progress for message {}: {}", assistant.getId(), ex.getMessage());
+        }
+    }
+
+    private void rollbackProgress(ChatMessage assistant, StringBuilder content, StringBuilder reasoning,
+                                  StreamProgress progress, int contentLength, int reasoningLength) {
+        progress.contentLength = contentLength;
+        progress.reasoningLength = reasoningLength;
+        try {
+            chatService.resetProgress(assistant.getId(), content.substring(0, contentLength),
+                    reasoning.substring(0, reasoningLength));
+        } catch (RuntimeException ex) {
+            log.warn("Failed to reset chat progress for message {}: {}", assistant.getId(), ex.getMessage());
+        }
+    }
+
+    /** 流式落库进度：只记录尚未写入增量表的文本长度，避免重复追加。 */
+    private static final class StreamProgress {
+        private long lastFlushAt;
+        private int contentLength;
+        private int reasoningLength;
+
+        private StreamProgress(long startedAt) {
+            this.lastFlushAt = startedAt;
         }
     }
 

@@ -180,9 +180,11 @@ public class SpaceService {
     @Transactional
     public SpaceView create(SpaceCreateRequest request, Long creatorId) {
         String code = request.code().trim().toLowerCase();
-        long count = spaceMapper.selectCount(new LambdaQueryWrapper<Space>().eq(Space::getCode, code));
-        if (count > 0) {
-            throw BizException.conflict("空间编码已存在");
+        // Archived spaces keep occupying the unique code, so the check must include them.
+        Long count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM king_ai_space WHERE code = ?", Long.class, code);
+        if (count != null && count > 0) {
+            throw BizException.conflict("空间编码已存在（含已归档空间）");
         }
         Space space = new Space();
         space.setName(request.name().trim());
@@ -208,29 +210,16 @@ public class SpaceService {
         return view(space, roleInSpace(principal, id).name());
     }
 
+    /**
+     * Spaces are archived, never removed: sessions, messages, the usage ledger, audit
+     * trail and the space's resources stay intact so compliance evidence survives.
+     */
     @Transactional
     public void delete(UserPrincipal principal, Long id) {
         requireSpaceRole(principal, id, SpaceRole.OWNER);
         require(id);
-        String[][] blockers = {
-                {"king_ai_agent", "智能体"},
-                {"king_ai_supplier", "模型供应商"},
-                {"king_ai_knowledge_base", "知识库"},
-                {"king_ai_mcp", "MCP 服务"},
-                {"king_ai_skill", "技能"}
-        };
-        for (String[] blocker : blockers) {
-            Long count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM " + blocker[0] + " WHERE space_id = ?", Long.class, id);
-            if (count != null && count > 0) {
-                throw BizException.conflict("空间内仍有" + blocker[1] + "，请先删除相关资源");
-            }
-        }
-        jdbcTemplate.update("DELETE FROM king_ai_chat_message WHERE session_id IN "
-                + "(SELECT id FROM king_ai_chat_session WHERE space_id = ?)", id);
-        jdbcTemplate.update("DELETE FROM king_ai_chat_session WHERE space_id = ?", id);
         userSpaceMapper.delete(new LambdaQueryWrapper<UserSpace>().eq(UserSpace::getSpaceId, id));
-        spaceMapper.deleteById(id);
+        spaceMapper.softDeleteById(id);
     }
 
     public List<SpaceMemberView> members(UserPrincipal principal, Long spaceId) {

@@ -1,6 +1,7 @@
 package com.king.ai.compliance.export;
 
 import com.king.ai.config.KingAiProperties;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -16,6 +17,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 @Component
+@ConditionalOnProperty(name = "king-ai.compliance.export.storage", havingValue = "local", matchIfMissing = true)
 public class LocalExportStorage implements ExportStorage {
 
     private final Path root;

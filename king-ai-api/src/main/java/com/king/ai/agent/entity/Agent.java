@@ -1,5 +1,6 @@
 package com.king.ai.agent.entity;
 
+import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.Version;
 import com.king.ai.system.entity.BaseEntity;
@@ -7,6 +8,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -30,4 +32,7 @@ public class Agent extends BaseEntity {
 
     @Version
     private Integer version;
+
+    @TableLogic(value = "null", delval = "now()")
+    private LocalDateTime deletedAt;
 }

@@ -18,8 +18,6 @@ import com.king.ai.agent.mapper.AgentMapper;
 import com.king.ai.agent.mapper.AgentMcpMapper;
 import com.king.ai.agent.mapper.AgentSkillMapper;
 import com.king.ai.agent.mapper.AgentVersionMapper;
-import com.king.ai.chat.entity.ChatSession;
-import com.king.ai.chat.mapper.ChatSessionMapper;
 import com.king.ai.common.BizException;
 import com.king.ai.common.Ids;
 import com.king.ai.common.OptimisticLocks;
@@ -35,6 +33,7 @@ import com.king.ai.model.entity.SupplierModel;
 import com.king.ai.model.mapper.SupplierModelMapper;
 import com.king.ai.skill.entity.Skill;
 import com.king.ai.skill.mapper.SkillMapper;
+import com.king.ai.system.mapper.SpaceMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -68,7 +67,7 @@ public class AgentService {
     private final KnowledgeBaseMapper knowledgeBaseMapper;
     private final McpServerMapper mcpServerMapper;
     private final SkillMapper skillMapper;
-    private final ChatSessionMapper chatSessionMapper;
+    private final SpaceMapper spaceMapper;
     private final ModelRuntimeService modelRuntimeService;
     private final ObjectMapper objectMapper;
 
@@ -144,21 +143,20 @@ public class AgentService {
         return view(agent);
     }
 
+    /**
+     * The agent row is archived rather than removed, so existing sessions keep their
+     * history and can still resolve the agent name after deletion.
+     */
     @Transactional
     public void delete(Long spaceId, Long id) {
         Agent agent = require(spaceId, id);
         if (isPublished(agent)) {
             throw BizException.conflict("请先下架智能体后再删除");
         }
-        long sessions = chatSessionMapper.selectCount(new LambdaQueryWrapper<ChatSession>()
-                .eq(ChatSession::getAgentId, id));
-        if (sessions > 0) {
-            throw BizException.conflict("该智能体已有 " + sessions + " 个对话记录，请先删除相关会话后再删除智能体");
-        }
         agentKnowledgeMapper.delete(new LambdaQueryWrapper<AgentKnowledge>().eq(AgentKnowledge::getAgentId, id));
         agentMcpMapper.delete(new LambdaQueryWrapper<AgentMcp>().eq(AgentMcp::getAgentId, id));
         agentSkillMapper.delete(new LambdaQueryWrapper<AgentSkill>().eq(AgentSkill::getAgentId, id));
-        agentMapper.deleteById(id);
+        agentMapper.softDeleteById(id);
     }
 
     @Transactional
@@ -239,6 +237,10 @@ public class AgentService {
         Agent agent = agentMapper.selectOne(new LambdaQueryWrapper<Agent>()
                 .eq(Agent::getPublicId, publicId.trim()));
         if (agent == null || !isPublished(agent) || agent.getStatus() == null || agent.getStatus() != 0) {
+            throw BizException.notFound("智能体不存在或已下架");
+        }
+        // An archived space must stop serving public traffic even if its agents stay published.
+        if (spaceMapper.selectById(agent.getSpaceId()) == null) {
             throw BizException.notFound("智能体不存在或已下架");
         }
         return agent;

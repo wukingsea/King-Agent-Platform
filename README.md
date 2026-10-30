@@ -9,7 +9,7 @@
 
 ## 功能概览
 
-- 空间与 RBAC：业务空间隔离数据，通过 `X-Space-Id` 控制上下文；空间内支持 `OWNER / ADMIN / EDITOR / VIEWER / AUDITOR` 角色，管理员可切换全部空间，普通用户仅能访问被授权空间。
+- 空间与 RBAC：业务空间隔离数据，通过 `X-Space-Id` 控制上下文；空间内支持 `OWNER / ADMIN / EDITOR / VIEWER / AUDITOR` 角色，管理员可切换全部空间，普通用户仅能访问被授权空间。删除空间与智能体采用归档语义：只写 `deleted_at`，会话、消息、审计与用量账本不会被级联清除。
 - 供应商与模型：统一 OpenAI 兼容协议，支持对话模型与嵌入模型；API Key 使用 AES-GCM 加密存储并掩码展示；支持连通性测试与模型列表导入。
 - 智能体编排：选择模型、填写系统指令与参数、绑定知识库 / MCP 服务 / 技能，支持发布、取消发布与公开访问 ID。
 - 流式对话：SSE 输出思考过程、正文、工具调用、工具结果、知识引用与 Token 用量；支持停止生成，生成内容持续落库。
@@ -18,6 +18,7 @@
 - SKILL 技能：以锁定的 `SKILL.md` 为核心，支持目录树与参考文件；技能规范注入系统提示词，模型可按需调用 `skill_read_file` 读取其他文件。
 - 会话管理：管理端查看全量会话与消息、来源筛选、关键字搜索、重命名；公开对话按浏览器访客隔离会话。
 - 合规与审计：按空间配置内容审核、PII 脱敏、留存策略与法律保留；支持数据导出、访问复核与审计日志检索，敏感操作全程留痕。
+- 用量与成本：每次对话按实际模型记录输入/输出 Token 与估算成本，形成只追加的空间用量账本；空间可设置月度 Token 配额，用尽后对话返回 429。
 - 公开对话页：发布后的智能体可通过 `/#/chat/{publicId}` 免登录访问，使用服务端签名的访客 Cookie、分钟级限流与空间并发配额。
 - 安全设计：不透明 Token 登录态、BCrypt 密码、登录失败保护、Markdown XSS 净化、出站 URL 逐跳校验、公开接口最小化字段暴露。
 
@@ -79,6 +80,7 @@ King-AI-Platform/
 │       │   ├── common/        # 响应、异常、安全、加密
 │       │   ├── compliance/    # 内容审核、留存、法律保留、导出、访问复核
 │       │   ├── config/        # 配置、运行时装配、演示引导
+│       │   ├── finops/        # 用量账本、价格表、月度 Token 配额
 │       │   ├── knowledge/     # 知识库、分片、向量存储
 │       │   ├── llm/           # OpenAI 兼容客户端与 Mock
 │       │   ├── mcp/           # MCP 客户端与服务管理
@@ -229,9 +231,14 @@ docker compose down -v       # 停止并删除全部数据卷（不可恢复）
 | `REDIS_PASSWORD` | `king_ai_redis` | Redis 密码 |
 | `MILVUS_URL` | `http://milvus:19530` | Milvus REST 地址 |
 | `MILVUS_TOKEN` | 空 | Milvus Token（未开启鉴权时为空） |
+| `MILVUS_COLLECTION_MODE` | `shared` | 共享 collection（按维度拆分、空间分区）或 `per-kb` 旧布局 |
+| `MILVUS_COLLECTION_PREFIX` / `MILVUS_PARTITIONS_NUM` | `king_ai_chunks_v2` / `64` | 共享 collection 前缀与分区数（分区数创建后不可修改） |
 | `KING_AI_DEMO_ENABLED` | `false` | 是否启用演示 MCP 与自动索引 |
 | `PUBLIC_RATE_LIMIT_PER_MINUTE` | `20` | 公开对话每访客每分钟请求上限 |
 | `KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE` | `4` | 每个空间允许同时运行的对话流数量，`0` 表示不限制 |
+| `KING_AI_FINOPS_QUOTA_ENABLED` | `true` | 空间月度 Token 配额用尽后是否阻断对话 |
+| `KING_AI_FINOPS_CURRENCY` | `USD` | 用量账本记录的币种 |
+| `KING_AI_FINOPS_DEFAULT_INPUT_PRICE` / `_OUTPUT_PRICE` | `0` | 未单独配置价格时，每百万 Token 的默认输入/输出单价 |
 | `API_PORT` / `UI_PORT` | `8080` / `80` | Compose 暴露到宿主机的端口 |
 | `JAVA_OPTS` | `-XX:MaxRAMPercentage=75` | JVM 参数 |
 
@@ -243,6 +250,8 @@ Spring Boot 配置还可通过环境变量覆盖，例如：
 - `KING_AI_SESSION_TTL`：登录态有效期
 
 列表接口统一支持 `page` / `size`（默认 `1` / `20`，上限 `200`），响应包含 `total`、`totalPages`、`hasNext`、`hasPrevious`。工作台统计使用 `GET /api/workspace/stats` 聚合查询，不再拉取全量资源列表。
+
+用量与配额接口：`GET /api/finops/usage` 返回当前空间本月 Token、估算成本、按模型分布与最近 20 条记录；`PUT /api/finops/quota` 需空间 `OWNER`，设置 `monthlyTokenQuota`（`0` 表示不限额）。模型单价按「模型标识 → 每百万 Token 单价」配置在 `king-ai.finops.prices`，未配置时回退到默认单价；价格变更只影响之后写入的记录。
 
 详细部署、认证、备份与故障排查见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
 
@@ -289,16 +298,25 @@ event: heartbeat     长连接保活，客户端忽略
 # 后端编译、单元测试与打包
 mvn -B clean verify
 
-# 前端类型检查与生产构建
+# MySQL 8 集成测试：迁移、租户隔离、会话归属（需要 Docker，Testcontainers 自动拉起 MySQL）
+mvn -B -pl king-ai-api -am test -Dtest=MySqlMigrationTest -DfailIfNoTests=false
+
+# 前端校验：Lint、单元测试、类型检查与生产构建
 cd king-ai-ui
 npm ci
+npm run lint
+npm test
 npm run build
+
+# 端到端测试（首次需安装浏览器：npx playwright install chromium）
+npm run test:e2e
 ```
 
 CI（`.github/workflows/ci.yml`）包含：
 
 - 后端 `mvn verify` 与测试报告归档
-- 前端类型检查、生产构建与 `npm audit`
+- 独立 MySQL 8 Job：Testcontainers 集成测试（迁移、租户隔离、会话归属）
+- 前端 ESLint、Vitest、类型检查、生产构建、Playwright 端到端测试与 `npm audit`
 - Trivy 依赖、密钥与配置扫描，以及 CycloneDX SBOM
 - API 与 UI 容器镜像构建
 - PR 依赖变更审查
@@ -306,9 +324,11 @@ CI（`.github/workflows/ci.yml`）包含：
 ## 已知边界
 
 - 本地向量存储与内存 Token 存储仅适用于单实例开发环境，生产必须使用 Milvus 与 Redis。
-- Milvus 当前为每个知识库创建独立 collection，知识库数量很大时应改为共享 collection 加分区字段。
-- 本地向量库最多加载 2 万条向量并做内存全量扫描，仅用于开发与演示。
+- Milvus 默认使用共享 collection（按嵌入维度拆分，`space_id` 分区键）；从 `per-kb` 旧布局切换后需要重新索引已有知识库。
+- 空间与智能体删除为归档，归档行及其历史数据默认长期保留，界面不提供还原或物理清理入口；空间编码在归档后仍被占用。需要复用编码或彻底清除时应按合规流程由数据库管理员处理。
+- 本地向量存储按页扫描并用 Top-K 堆保留结果，单次查询扫描上限由 `king-ai.local-vector.max-scan` 控制（默认 20 万行），仅用于开发与演示。
 - 知识库文件解析支持 TXT、Markdown 与文本型 PDF，尚未接入 OCR 处理扫描件。
 - Agent 发布已支持不可变版本与回滚，但发布审批、灰度发布与自动评测尚未实现。
-- 合规能力仍在补齐中：PII/DLP 脱敏、内容审核、法律保留、数据导出与访问复核尚未内置。
-- 私有化交付提供 Docker Compose，Helm/K8s、离线镜像包与 air-gap 支持包尚未提供。
+- 配额检查在请求开始时读取本月用量，属于前置近似判断：并发请求可能同时通过检查，适合防止失控花费，不保证精确到最后一个请求。
+- 成本按配置单价估算，供应商账单仍以实际计费为准；价格变更只影响之后写入的记录。
+- 私有化交付提供 Docker Compose 与 Helm Chart；离线镜像包与 air-gap 支持包尚未提供。

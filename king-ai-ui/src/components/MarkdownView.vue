@@ -80,6 +80,7 @@ onMounted(decorate)
 </script>
 
 <template>
+  <!-- eslint-disable-next-line vue/no-v-html -- sanitized by DOMPurify in the `html` computed -->
   <div ref="root" class="markdown-body" v-html="html"></div>
 </template>
 

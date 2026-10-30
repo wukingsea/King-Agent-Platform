@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.king.ai.agent.mapper.AgentKnowledgeMapper;
 import com.king.ai.common.BizException;
-import com.king.ai.common.Ids;
 import com.king.ai.common.OptimisticLocks;
 import com.king.ai.common.PageQuery;
 import com.king.ai.common.PageResult;
@@ -150,7 +149,7 @@ public class KnowledgeService {
         base.setDescription(Texts.trimTo(request.description(), 500));
         base.setEmbeddingModelId(request.embeddingModelId());
         base.setEmbeddingDim(resolved.model().getDimension());
-        base.setVectorCollection("king_kb_" + Ids.publicId().substring(0, 24));
+        base.setVectorCollection(vectorStore.storageName(base));
         base.setChunkSize(settings.chunkSize());
         base.setChunkOverlap(settings.overlap());
         base.setTopK(settings.topK());
@@ -182,7 +181,7 @@ public class KnowledgeService {
                     spaceId, request.embeddingModelId());
             base.setEmbeddingModelId(request.embeddingModelId());
             base.setEmbeddingDim(resolved.model().getDimension());
-            base.setVectorCollection("king_kb_" + Ids.publicId().substring(0, 24));
+            base.setVectorCollection(vectorStore.storageName(base));
         }
         base.setName(request.name().trim());
         base.setDescription(Texts.trimTo(request.description(), 500));

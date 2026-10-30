@@ -15,6 +15,7 @@ import { ApiError } from '@/api/http'
 import { chatApi, publicChatApi } from '@/api'
 import { streamChat } from '@/api/sse'
 import type {
+  ChatMessageView,
   ChatSessionView,
   CitationItem,
   ToolApprovalEvent,
@@ -34,6 +35,8 @@ const props = withDefaults(
   }>(),
   {
     mode: 'admin',
+    agentId: undefined,
+    publicId: undefined,
     agentName: 'King 助手',
     variant: 'console',
     agentIntro: '',
@@ -101,7 +104,7 @@ function onMessagesScroll() {
     element.scrollHeight - element.scrollTop - element.clientHeight < 160
 }
 
-function normalize(message: any): UiMessage {
+function normalize(message: ChatMessageView): UiMessage {
   const trace: ToolTraceItem[] = Array.isArray(message.toolTrace)
     ? message.toolTrace.map((item: ToolTraceItem) => ({ ...item, running: false }))
     : []

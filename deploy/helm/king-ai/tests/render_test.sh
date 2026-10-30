@@ -121,6 +121,34 @@ if helm template king-ai "$CHART_DIR" --namespace king-ai \
   exit 1
 fi
 
+# Sprint 2 wiring: object-storage exports and FinOps quota settings reach the
+# API pod; S3 credentials come from a pre-created Secret, never the ConfigMap.
+helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set api.export.storage=s3 \
+  --set api.export.s3.endpoint=http://minio:9000 \
+  --set api.export.s3.bucket=king-ai-exports \
+  --set api.export.s3.existingSecret=king-ai-s3 > "$WORK_DIR/exports-s3.yaml"
+for needle in \
+  'KING_AI_EXPORT_STORAGE' \
+  'KING_AI_EXPORT_S3_ENDPOINT' \
+  'http://minio:9000' \
+  'KING_AI_FINOPS_QUOTA_ENABLED' \
+  'name: KING_AI_EXPORT_S3_ACCESS_KEY' \
+  'name: KING_AI_EXPORT_S3_SECRET_KEY' \
+  'name: king-ai-s3' \
+  'key: access-key' \
+  'key: secret-key'; do
+  if ! grep -qF -- "$needle" "$WORK_DIR/exports-s3.yaml"; then
+    echo "ASSERT FAILED: missing $needle in s3 export render" >&2
+    exit 1
+  fi
+done
+if helm template king-ai "$CHART_DIR" --namespace king-ai \
+  --set api.export.storage=s3 >/dev/null 2>&1; then
+  echo "ASSERT FAILED: api.export.storage=s3 without existingSecret must be rejected" >&2
+  exit 1
+fi
+
 # Kind (bundled dev dependencies) render: the Opaque dev Secrets (hook-weight
 # -30, ahead of the service account -20 and the migrate Job -10), the
 # mysql/redis Service+Deployment pairs and the API_UPSTREAM env must render.

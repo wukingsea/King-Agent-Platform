@@ -16,7 +16,7 @@ import { spaceApi, userApi } from '@/api'
 import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import type { SpaceMemberUpdate, SpaceRole, SpaceView, UserOption } from '@/api/types'
-import { formatDate, fromNow } from '@/utils/format'
+import { fromNow } from '@/utils/format'
 
 const auth = useAuthStore()
 const router = useRouter()

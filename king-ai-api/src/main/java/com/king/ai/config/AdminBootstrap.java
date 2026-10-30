@@ -131,9 +131,9 @@ public class AdminBootstrap implements ApplicationRunner {
         if (code == null) {
             code = "default";
         }
-        Space space = spaceMapper.selectOne(new LambdaQueryWrapper<Space>().eq(Space::getCode, code));
+        Space space = spaceMapper.selectAnyByCode(code);
         if (space != null) {
-            return space;
+            return restoreIfArchived(space, code);
         }
         space = new Space();
         space.setName(trimToNull(config.getSpaceName()) == null ? "默认空间" : config.getSpaceName().trim());
@@ -144,12 +144,23 @@ public class AdminBootstrap implements ApplicationRunner {
             spaceMapper.insert(space);
             return space;
         } catch (DuplicateKeyException ex) {
-            Space concurrent = spaceMapper.selectOne(new LambdaQueryWrapper<Space>().eq(Space::getCode, code));
+            Space concurrent = spaceMapper.selectAnyByCode(code);
             if (concurrent == null) {
                 throw ex;
             }
-            return concurrent;
+            return restoreIfArchived(concurrent, code);
         }
+    }
+
+    private Space restoreIfArchived(Space space, String code) {
+        if (space.getDeletedAt() == null) {
+            return space;
+        }
+        spaceMapper.restoreById(space.getId());
+        space.setDeletedAt(null);
+        space.setStatus(0);
+        log.warn("Restored archived default space '{}' required by bootstrap configuration", code);
+        return space;
     }
 
     private void ensureOwner(User user, Space space) {

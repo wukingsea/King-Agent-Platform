@@ -73,7 +73,8 @@ public class AccessReviewService {
                                 : rs.getTimestamp("activity").toLocalDateTime()), spaceId);
         List<PublicAgentSnapshot> agents = jdbcTemplate.query(
                 "SELECT id, name, public_id, updated_at FROM king_ai_agent "
-                        + "WHERE space_id = ? AND publish_status = 1 AND public_id IS NOT NULL ORDER BY id",
+                        + "WHERE space_id = ? AND deleted_at IS NULL "
+                        + "AND publish_status = 1 AND public_id IS NOT NULL ORDER BY id",
                 (rs, rowNum) -> new PublicAgentSnapshot(rs.getLong("id"), rs.getString("name"),
                         rs.getString("public_id"),
                         rs.getTimestamp("updated_at") == null ? null

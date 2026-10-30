@@ -56,9 +56,14 @@ VITE_API_PROXY=http://localhost:8082 npm run dev
 # 后端编译、单元测试、打包
 mvn -B clean verify
 
-# 前端类型检查与生产构建
+# MySQL 8 集成测试：迁移、租户隔离、会话归属（需要 Docker）
+mvn -B -pl king-ai-api -am test -Dtest=MySqlMigrationTest -DfailIfNoTests=false
+
+# 前端 Lint、单元测试、类型检查与生产构建
 cd king-ai-ui
 npm ci
+npm run lint
+npm test
 npm run build
 ```
 
@@ -97,6 +102,34 @@ KING_AI_COOKIE_SECURE=true
 
 # 默认关闭演示资源
 KING_AI_DEMO_ENABLED=false
+
+# 合规导出存储：local 写入 API 数据卷；s3 使用 S3 兼容对象存储（bucket 需预先创建）
+KING_AI_EXPORT_STORAGE=local
+# KING_AI_EXPORT_S3_ENDPOINT=http://minio:9000
+# KING_AI_EXPORT_S3_ACCESS_KEY=...
+# KING_AI_EXPORT_S3_SECRET_KEY=...
+# KING_AI_EXPORT_S3_BUCKET=king-ai-exports
+# KING_AI_EXPORT_S3_PREFIX=exports
+
+# 空间月度 Token 配额与成本估算；配额本身通过 PUT /api/finops/quota 设置
+KING_AI_FINOPS_QUOTA_ENABLED=true
+KING_AI_FINOPS_CURRENCY=USD
+KING_AI_FINOPS_DEFAULT_INPUT_PRICE=0
+KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE=0
+```
+
+使用 Compose 自带的 MinIO 作为导出存储时，先创建 bucket，再在 `.env` 中启用：
+
+```bash
+docker compose exec minio mc alias set local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+docker compose exec minio mc mb local/king-ai-exports
+# 然后在 .env 中设置：
+# KING_AI_EXPORT_STORAGE=s3
+# KING_AI_EXPORT_S3_ENDPOINT=http://minio:9000
+# KING_AI_EXPORT_S3_ACCESS_KEY=<MINIO_ROOT_USER>
+# KING_AI_EXPORT_S3_SECRET_KEY=<MINIO_ROOT_PASSWORD>
+# KING_AI_EXPORT_S3_BUCKET=king-ai-exports
+docker compose up -d api
 ```
 
 生产 profile 启动时会强制校验：
@@ -123,6 +156,8 @@ docker compose logs -f api
 - 公开对话页：`http://localhost/#/chat/{publicId}`（需先在后台发布智能体）
 
 Compose 中 API 默认只绑定 `127.0.0.1:8080`，建议仅通过 UI 的 Nginx 反向代理访问，不直接暴露 API。
+
+API 的健康检查使用 `/actuator/health/readiness`，MySQL、Redis、Milvus 未就绪时不会被视为可用。UI 容器同样配置了独立健康检查，并通过 `UI_CPU_LIMIT`、`UI_MEMORY_LIMIT`、`UI_CPU_RESERVATION`、`UI_MEMORY_RESERVATION` 控制资源配额。
 
 ### 3.3 停止与数据卷
 
@@ -215,13 +250,46 @@ curl -N -b visitor.txt -X POST http://localhost:8080/api/public/chat/send \
 
 停止生成与工具确认接口会校验访客 Cookie 与请求归属。
 
+### 4.5 用量与 Token 配额
+
+每次对话结束后，服务端向 `king_ai_usage_ledger` 追加一条用量记录（空间、智能体、模型、输入/输出 Token、估算成本、状态）。查询当前空间本月用量：
+
+```bash
+curl -s -H "X-Space-Id: 1" -b cookies.txt http://localhost:8080/api/finops/usage
+```
+
+设置空间月度 Token 配额（仅空间 `OWNER`，`0` 表示不限额）：
+
+```bash
+curl -s -X PUT -H "Content-Type: application/json" -H "X-Space-Id: 1" -b cookies.txt \
+  -d '{"monthlyTokenQuota":1000000}' http://localhost:8080/api/finops/quota
+```
+
+- 配额用尽后对话返回 HTTP 429，递增计数器 `king.ai.finops.quota_rejected`，并写入 `chat.quota_rejected` 审计事件；已完成的历史用量不受影响。
+- 成本按每百万 Token 单价估算：默认单价由 `KING_AI_FINOPS_DEFAULT_INPUT_PRICE` / `KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE` 提供，模型级覆盖使用 `king-ai.finops.prices.<model>.input-per-million` / `output-per-million`（需通过 JVM 系统属性或配置文件设置）。价格变更只影响之后写入的记录。
+- 配额检查是请求前近似判断，并发请求可能同时通过；它用于防止失控花费，不保证精确到最后一个请求。
+
+### 4.6 空间与智能体归档
+
+- `DELETE /api/spaces/{id}` 与 `DELETE /api/agents/{id}` 只写入 `deleted_at`。空间归档后，其会话、消息、审计日志、法律保留、导出任务、用量账本以及供应商、知识库、MCP、技能原样保留；成员授权会被移除。
+- 归档空间的公开智能体不再可访问，管理端查询与详情接口返回 404。归档智能体不能再开始新对话，但历史会话仍显示其名称。
+- 空间编码在归档后继续占用唯一索引；如果需要复用编码，应由 DBA 在确认合规要求后手动处理归档行。
+- 若 `KING_AI_ADMIN_SPACE_CODE` 指向的空间已被归档，服务启动时会自动恢复该空间，避免管理员失去默认空间。
+
+### 4.7 向量存储布局
+
+- 生产 Milvus 默认使用共享 collection：`MILVUS_COLLECTION_PREFIX`（默认 `king_ai_chunks_v2`）加嵌入维度后缀，例如 `king_ai_chunks_v2_1024`；`space_id` 为分区键，`MILVUS_PARTITIONS_NUM` 默认 64，创建后不可修改。
+- 检索与删除均按 `space_id + kb_id` 过滤；删除知识库只删除该知识库的向量行，不再删除整个 collection，旧版每知识库 collection 会在删除时顺带清理。
+- 需要沿用旧布局时设置 `MILVUS_COLLECTION_MODE=per-kb`。从 `per-kb` 切换到 `shared` 后，已有知识库需要重新索引（重新生成向量）才能被检索到。
+- 本地开发使用 `king-ai.local-vector.scan-batch-size`（默认 2000）分页扫描，`king-ai.local-vector.max-scan`（默认 200000，`0` 不限制）控制单次查询扫描行数。
+
 ## 5. 可观测性
 
 ### 5.1 信号端点
 
 - 存活检查：`/actuator/health/liveness`
 - 就绪检查：`/actuator/health/readiness`（包含数据库与 Token 存储）
-- 容器健康检查：`/api/health`（数据库 + 状态存储，异常返回 503）
+- 容器健康检查：`/actuator/health/readiness`（`readinessState + db + stateStore`，任一异常返回 503）
 - Prometheus 指标：`/actuator/prometheus`
 - Trace 导出：OTLP/HTTP，生产默认关闭；设置
   `OTEL_TRACING_EXPORT_ENABLED=true` 与
@@ -331,7 +399,7 @@ helm upgrade --install king-ai deploy/helm/king-ai -n king-ai \
 ```
 
 发布顺序：`pre-install/pre-upgrade` 迁移 Job → API/UI 滚动更新。Job 失败时 Helm 停止，不继续滚动。
-`persistence.exports.mode=pvc` 需要 ReadWriteMany 存储；只有 RWO 时将 API 限制为单副本，或等待 P2-3 对象存储。
+`persistence.exports.mode=pvc` 需要 ReadWriteMany 存储；只有 RWO 时将 API 限制为单副本，或设置 `api.export.storage=s3` 使用对象存储（见 chart README「合规导出存储」）。
 SSE 在 Pod 滚动升级期间会被终止，断线恢复属于 P2-2；Ingress 已关闭缓冲并设置 600 秒超时。
 
 回滚：
@@ -436,7 +504,7 @@ Helm 只执行镜像内 Flyway；迁移文件必须随 API 镜像发布。
 
 ### 对话异常
 
-- HTTP 429：空间并发配额或公开对话限流触发，检查 `KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE` 与 `PUBLIC_RATE_LIMIT_PER_MINUTE`。
+- HTTP 429：空间并发配额、空间月度 Token 配额或公开对话限流触发，检查 `KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE`、`GET /api/finops/usage` 的剩余配额与 `PUBLIC_RATE_LIMIT_PER_MINUTE`。
 - SSE 首字慢：确认 Nginx 对 `/api/` 关闭 `proxy_buffering`，并适当提高 `proxy_read_timeout`。
 - 工具调用等待确认：检查前端是否展示 `tool_approval` 事件，确认接口是否在 120 秒内调用。
 - 模型持续失败：查看 `retry` / `degraded` 事件与熔断指标；确认供应商地址、密钥和出站 allowlist。

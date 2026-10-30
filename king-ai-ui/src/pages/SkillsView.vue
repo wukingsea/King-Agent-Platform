@@ -80,7 +80,7 @@ const skillRules: FormRules = {
 const selectedSkill = computed(() => detail.value?.skill || null)
 const files = computed<SkillFileView[]>(() => detail.value?.files || [])
 const isDirty = computed(
-  () => !!selectedFile && editorContent.value !== savedContent.value,
+  () => !!selectedFile.value && editorContent.value !== savedContent.value,
 )
 
 const tree = computed<TreeNode[]>(() => {
@@ -591,10 +591,12 @@ onMounted(async () => {
                     <span v-if="node.locked === 1" class="lock-tag">内置</span>
                   </button>
                   <div v-if="auth.canEditSpace" class="tree-tools">
-                    <el-dropdown trigger="click" @command="(cmd: string) => {
-                      if (cmd === 'rename') openRename(node)
-                      if (cmd === 'delete') removeFile(node)
-                    }">
+                    <el-dropdown
+                      trigger="click" @command="(cmd: string) => {
+                        if (cmd === 'rename') openRename(node)
+                        if (cmd === 'delete') removeFile(node)
+                      }"
+                    >
                       <button type="button" class="tree-more">···</button>
                       <template #dropdown>
                         <el-dropdown-menu>

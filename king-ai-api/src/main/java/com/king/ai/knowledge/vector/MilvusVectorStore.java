@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.king.ai.common.Ids;
 import com.king.ai.common.Texts;
 import com.king.ai.config.KingAiProperties;
 import com.king.ai.knowledge.entity.KnowledgeBase;
@@ -23,6 +24,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -39,6 +41,9 @@ public class MilvusVectorStore implements VectorStore {
     private final String baseUrl;
     private final String token;
     private final KnowledgeMetrics metrics;
+    private final boolean sharedMode;
+    private final String collectionPrefix;
+    private final int partitionsNum;
     private final Set<String> readyCollections = ConcurrentHashMap.newKeySet();
 
     public MilvusVectorStore(OkHttpClient httpClient, ObjectMapper objectMapper,
@@ -58,6 +63,10 @@ public class MilvusVectorStore implements VectorStore {
         this.baseUrl = base;
         this.token = properties.getMilvus().getToken();
         this.metrics = metrics;
+        this.sharedMode = !isPerKbMode(properties.getMilvus().getCollectionMode());
+        this.collectionPrefix = Texts.blankToDefault(
+                properties.getMilvus().getCollectionPrefix(), "king_ai_chunks_v2").trim();
+        this.partitionsNum = Math.max(1, properties.getMilvus().getPartitionsNum());
     }
 
     @Override
@@ -66,38 +75,36 @@ public class MilvusVectorStore implements VectorStore {
         if (readyCollections.contains(collection)) {
             return;
         }
+        int dimension = dimension(base);
         JsonNode describe = post("/v2/vectordb/collections/describe",
                 objectMapper.createObjectNode().put("collectionName", collection), false);
         if (isSuccess(describe)) {
+            verifyDimension(collection, dimension, describe);
             readyCollections.add(collection);
             return;
         }
-        int dimension = base.getEmbeddingDim() == null ? 0 : base.getEmbeddingDim();
-        if (dimension <= 0) {
-            throw new VectorStoreException("知识库未配置向量维度");
+        try {
+            post("/v2/vectordb/collections/create", createBody(collection, dimension), true);
+            log.info("Milvus collection created: {}, dimension={}, shared={}",
+                    collection, dimension, sharedMode);
+        } catch (VectorStoreException ex) {
+            // Another instance may have created the collection between describe and create.
+            JsonNode retry = post("/v2/vectordb/collections/describe",
+                    objectMapper.createObjectNode().put("collectionName", collection), false);
+            if (!isSuccess(retry)) {
+                throw ex;
+            }
+            verifyDimension(collection, dimension, retry);
         }
-        ObjectNode body = objectMapper.createObjectNode();
-        body.put("collectionName", collection);
-        ObjectNode schema = body.putObject("schema");
-        schema.put("autoId", false);
-        schema.put("enabledDynamicField", false);
-        ArrayNode fields = schema.putArray("fields");
-        fields.addObject().put("fieldName", "chunk_id").put("dataType", "Int64").put("isPrimary", true);
-        fields.addObject().put("fieldName", "doc_id").put("dataType", "Int64");
-        fields.addObject().put("fieldName", "space_id").put("dataType", "Int64");
-        fields.addObject().put("fieldName", "kb_id").put("dataType", "Int64");
-        ObjectNode vectorField = fields.addObject();
-        vectorField.put("fieldName", "embedding");
-        vectorField.put("dataType", "FloatVector");
-        vectorField.putObject("elementTypeParams").put("dim", String.valueOf(dimension));
-        ObjectNode index = body.putArray("indexParams").addObject();
-        index.put("fieldName", "embedding");
-        index.put("indexName", "embedding_idx");
-        index.put("metricType", "COSINE");
-        index.putObject("params").put("index_type", "AUTOINDEX").put("metric_type", "COSINE");
-        post("/v2/vectordb/collections/create", body, true);
         readyCollections.add(collection);
-        log.info("Milvus collection created: {}, dimension={}", collection, dimension);
+    }
+
+    @Override
+    public String storageName(KnowledgeBase base) {
+        if (sharedMode) {
+            return collectionPrefix + "_" + dimension(base);
+        }
+        return "king_kb_" + Ids.publicId().substring(0, 24);
     }
 
     @Override
@@ -132,13 +139,27 @@ public class MilvusVectorStore implements VectorStore {
     public void deleteDoc(KnowledgeBase base, Long docId) {
         ObjectNode body = objectMapper.createObjectNode();
         body.put("collectionName", collectionName(base));
-        body.put("filter", "kb_id == " + base.getId() + " && doc_id == " + docId);
+        body.put("filter", scopeFilter(base) + " && doc_id == " + docId);
         post("/v2/vectordb/entities/delete", body, false);
     }
 
     @Override
     public void deleteCollection(KnowledgeBase base) {
         String collection = collectionName(base);
+        if (sharedMode) {
+            // The collection is shared, so only this knowledge base's rows may be removed.
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("collectionName", collection);
+            body.put("filter", scopeFilter(base));
+            try {
+                post("/v2/vectordb/entities/delete", body, false);
+            } catch (VectorStoreException ex) {
+                log.warn("Failed to delete vectors of knowledge base {} from {}: {}",
+                        base.getId(), collection, ex.getMessage());
+            }
+            dropLegacyCollection(base, collection);
+            return;
+        }
         ObjectNode body = objectMapper.createObjectNode().put("collectionName", collection);
         try {
             post("/v2/vectordb/collections/drop", body, false);
@@ -163,7 +184,7 @@ public class MilvusVectorStore implements VectorStore {
         ArrayNode outputFields = body.putArray("outputFields");
         outputFields.add("chunk_id");
         outputFields.add("doc_id");
-        body.put("filter", "kb_id == " + base.getId());
+        body.put("filter", scopeFilter(base));
         JsonNode root;
         try {
             root = post("/v2/vectordb/entities/search", body, true);
@@ -189,6 +210,60 @@ public class MilvusVectorStore implements VectorStore {
         }
         hits.sort(Comparator.comparingDouble(VectorHit::score).reversed());
         return hits;
+    }
+
+    private ObjectNode createBody(String collection, int dimension) {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("collectionName", collection);
+        ObjectNode schema = body.putObject("schema");
+        schema.put("autoId", false);
+        schema.put("enabledDynamicField", false);
+        ArrayNode fields = schema.putArray("fields");
+        fields.addObject().put("fieldName", "chunk_id").put("dataType", "Int64").put("isPrimary", true);
+        fields.addObject().put("fieldName", "doc_id").put("dataType", "Int64");
+        ObjectNode spaceField = fields.addObject();
+        spaceField.put("fieldName", "space_id").put("dataType", "Int64");
+        if (sharedMode) {
+            // Queries always filter by space first, so Milvus can prune to one partition bucket.
+            spaceField.put("isPartitionKey", true);
+        }
+        fields.addObject().put("fieldName", "kb_id").put("dataType", "Int64");
+        ObjectNode vectorField = fields.addObject();
+        vectorField.put("fieldName", "embedding");
+        vectorField.put("dataType", "FloatVector");
+        vectorField.putObject("elementTypeParams").put("dim", String.valueOf(dimension));
+        ObjectNode index = body.putArray("indexParams").addObject();
+        index.put("fieldName", "embedding");
+        index.put("indexName", "embedding_idx");
+        index.put("metricType", "COSINE");
+        index.putObject("params").put("index_type", "AUTOINDEX").put("metric_type", "COSINE");
+        if (sharedMode) {
+            body.putObject("params").put("partitionsNum", partitionsNum);
+        }
+        return body;
+    }
+
+    private void verifyDimension(String collection, int expected, JsonNode describe) {
+        Integer actual = describedDimension(describe);
+        if (actual != null && actual != expected) {
+            throw new VectorStoreException("向量集合 " + collection + " 的维度为 " + actual
+                    + "，与知识库配置的 " + expected + " 不一致，请重建向量索引");
+        }
+    }
+
+    private void dropLegacyCollection(KnowledgeBase base, String activeCollection) {
+        String legacy = Texts.isBlank(base.getVectorCollection()) ? "" : base.getVectorCollection().trim();
+        if (legacy.isEmpty() || legacy.equals(activeCollection)) {
+            return;
+        }
+        try {
+            post("/v2/vectordb/collections/drop",
+                    objectMapper.createObjectNode().put("collectionName", legacy), false);
+            readyCollections.remove(legacy);
+            log.info("Dropped legacy Milvus collection {}", legacy);
+        } catch (VectorStoreException ex) {
+            log.warn("Failed to drop legacy Milvus collection {}: {}", legacy, ex.getMessage());
+        }
     }
 
     private JsonNode post(String path, ObjectNode body, boolean failOnError) {
@@ -245,10 +320,63 @@ public class MilvusVectorStore implements VectorStore {
         return root != null && root.has("code") && root.path("code").asInt(-1) == 0;
     }
 
-    private static String collectionName(KnowledgeBase base) {
+    private static boolean isPerKbMode(String mode) {
+        if (Texts.isBlank(mode)) {
+            return false;
+        }
+        String normalized = mode.trim().toLowerCase(Locale.ROOT).replace('_', '-');
+        return "per-kb".equals(normalized) || "perkb".equals(normalized);
+    }
+
+    private static Integer describedDimension(JsonNode describe) {
+        JsonNode data = describe.path("data");
+        JsonNode collection = data.isArray() && !data.isEmpty() ? data.get(0) : data;
+        JsonNode fields = collection.path("fields");
+        if (!fields.isArray()) {
+            return null;
+        }
+        for (JsonNode field : fields) {
+            if (!"embedding".equals(field.path("fieldName").asText())) {
+                continue;
+            }
+            String dim = field.path("elementTypeParams").path("dim").asText("");
+            if (Texts.isBlank(dim)) {
+                dim = field.path("dim").asText("");
+            }
+            try {
+                return Integer.parseInt(dim.trim());
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private String collectionName(KnowledgeBase base) {
+        if (sharedMode) {
+            return collectionPrefix + "_" + dimension(base);
+        }
         if (Texts.isBlank(base.getVectorCollection())) {
             throw new VectorStoreException("知识库未配置向量集合");
         }
         return base.getVectorCollection().trim();
+    }
+
+    private static int dimension(KnowledgeBase base) {
+        int dimension = base.getEmbeddingDim() == null ? 0 : base.getEmbeddingDim();
+        if (dimension <= 0) {
+            throw new VectorStoreException("知识库未配置向量维度");
+        }
+        return dimension;
+    }
+
+    private static String scopeFilter(KnowledgeBase base) {
+        if (base.getSpaceId() == null) {
+            throw new VectorStoreException("知识库缺少空间信息");
+        }
+        if (base.getId() == null) {
+            throw new VectorStoreException("知识库缺少标识");
+        }
+        return "space_id == " + base.getSpaceId() + " && kb_id == " + base.getId();
     }
 }

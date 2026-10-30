@@ -26,7 +26,11 @@ groups:
 
       - record: king_ai:chat_quota_rejection_ratio5m
         expr: |
-          sum(rate(king_ai_chat_rejected_total{reason="space_quota"}[5m]))
+          (
+            (sum(rate(king_ai_chat_rejected_total{reason="space_quota"}[5m])) or vector(0))
+            +
+            (sum(rate(king_ai_finops_quota_rejected_total[5m])) or vector(0))
+          )
           /
           clamp_min(sum(rate(king_ai_chat_requests_total[5m])), 0.001)
 

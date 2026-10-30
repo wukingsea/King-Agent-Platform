@@ -25,6 +25,26 @@ api:
   tolerations: []
   affinity: {}
   terminationGracePeriodSeconds: 120
+  # Compliance export storage. `local` writes to the exports volume; `s3` uses any
+  # S3-compatible endpoint (MinIO, AWS S3, OSS) and makes the volume unnecessary.
+  export:
+    storage: local
+    s3:
+      endpoint: ""
+      bucket: ""
+      prefix: exports
+      region: ""
+      # Secret holding the credentials; required when storage=s3.
+      existingSecret: ""
+      accessKeyKey: access-key
+      secretKeyKey: secret-key
+  # Per-space monthly token budget and cost estimation. A space quota of 0 is
+  # unlimited; prices are per 1M tokens and only affect the recorded cost.
+  finops:
+    quotaEnabled: true
+    currency: USD
+    defaultInputPricePerMillion: 0
+    defaultOutputPricePerMillion: 0
 
 ui:
   image:
@@ -83,6 +103,11 @@ externalMilvus:
   url: http://milvus.example.internal:19530
   existingSecret: ""
   tokenKey: token
+  # shared keeps one collection per embedding dimension partitioned by space_id;
+  # per-kb keeps the legacy one-collection-per-knowledge-base layout.
+  collectionMode: shared
+  collectionPrefix: king_ai_chunks_v2
+  partitionsNum: 64
 
 appSecret:
   existingSecret: king-ai-app

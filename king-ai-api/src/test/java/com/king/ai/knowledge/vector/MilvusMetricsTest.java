@@ -47,6 +47,7 @@ class MilvusMetricsTest {
         KingAiProperties properties = new KingAiProperties();
         properties.getMilvus().setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
         properties.getMilvus().setTimeoutSeconds(5);
+        properties.getMilvus().setCollectionMode("per-kb");
         store = new MilvusVectorStore(new OkHttpClient(), new ObjectMapper(), properties,
                 new KnowledgeMetrics(registry));
     }

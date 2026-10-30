@@ -10,7 +10,9 @@ import com.king.ai.agent.mapper.AgentMapper;
 import com.king.ai.chat.dto.ChatMessageView;
 import com.king.ai.chat.dto.ChatSessionView;
 import com.king.ai.chat.entity.ChatMessage;
+import com.king.ai.chat.entity.ChatMessageDelta;
 import com.king.ai.chat.entity.ChatSession;
+import com.king.ai.chat.mapper.ChatMessageDeltaMapper;
 import com.king.ai.chat.mapper.ChatMessageMapper;
 import com.king.ai.chat.mapper.ChatSessionMapper;
 import com.king.ai.common.BizException;
@@ -46,6 +48,7 @@ public class ChatService {
 
     private final ChatSessionMapper sessionMapper;
     private final ChatMessageMapper messageMapper;
+    private final ChatMessageDeltaMapper deltaMapper;
     private final AgentMapper agentMapper;
     private final ObjectMapper objectMapper;
     private final KingAiProperties properties;
@@ -88,7 +91,7 @@ public class ChatService {
                         .eq(ChatSession::getVisitorId, visitorId)
                         .orderByDesc(ChatSession::getLastMessageAt)
                         .orderByDesc(ChatSession::getId));
-        Agent agent = agentMapper.selectById(agentId);
+        Agent agent = agentMapper.selectAnyById(agentId);
         return result.getRecords().stream().map(session -> view(session, agent)).toList();
     }
 
@@ -129,7 +132,7 @@ public class ChatService {
         }
         session.setTitle(value);
         sessionMapper.updateById(session);
-        return view(session, agentMapper.selectById(session.getAgentId()));
+        return view(session, agentMapper.selectAnyById(session.getAgentId()));
     }
 
     @Transactional
@@ -205,17 +208,35 @@ public class ChatService {
         return message;
     }
 
-    public void updateProgress(Long messageId, String content, String reasoning,
+    public void appendProgress(Long messageId, String contentDelta, String reasoningDelta,
                                String toolTrace, String citations) {
+        boolean hasContent = !Texts.isBlank(contentDelta);
+        boolean hasReasoning = !Texts.isBlank(reasoningDelta);
+        if (!hasContent && !hasReasoning && toolTrace == null && citations == null) {
+            return;
+        }
+        ChatMessageDelta delta = new ChatMessageDelta();
+        delta.setMessageId(messageId);
+        delta.setContentDelta(hasContent ? contentDelta : null);
+        delta.setReasoningDelta(hasReasoning ? reasoningDelta : null);
+        delta.setToolTrace(toolTrace);
+        delta.setCitations(citations);
+        delta.setCreatedAt(LocalDateTime.now());
+        deltaMapper.insert(delta);
+    }
+
+    @Transactional
+    public void resetProgress(Long messageId, String content, String reasoning) {
         ChatMessage patch = new ChatMessage();
         patch.setId(messageId);
         patch.setContent(content == null ? "" : content);
         patch.setReasoning(reasoning == null ? "" : reasoning);
-        patch.setToolTrace(toolTrace == null ? "[]" : toolTrace);
-        patch.setCitations(citations == null ? "[]" : citations);
         messageMapper.updateById(patch);
+        deltaMapper.delete(new LambdaQueryWrapper<ChatMessageDelta>()
+                .eq(ChatMessageDelta::getMessageId, messageId));
     }
 
+    @Transactional
     public void finishAssistant(Long messageId, String content, String reasoning, String toolTrace,
                                 String citations, String status, String model,
                                 int promptTokens, int completionTokens, long durationMs) {
@@ -231,6 +252,8 @@ public class ChatService {
         patch.setCompletionTokens(completionTokens);
         patch.setDurationMs(durationMs);
         messageMapper.updateById(patch);
+        deltaMapper.delete(new LambdaQueryWrapper<ChatMessageDelta>()
+                .eq(ChatMessageDelta::getMessageId, messageId));
     }
 
     public void touchSession(Long sessionId, int addedMessages) {
@@ -275,12 +298,31 @@ public class ChatService {
     }
 
     private List<ChatMessageView> messagesOf(Long sessionId) {
-        return messageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
-                        .eq(ChatMessage::getSessionId, sessionId)
-                        .orderByAsc(ChatMessage::getId))
-                .stream()
-                .map(this::messageView)
+        List<ChatMessage> messages = messageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
+                .eq(ChatMessage::getSessionId, sessionId)
+                .orderByAsc(ChatMessage::getId));
+        Map<Long, List<ChatMessageDelta>> streamingDeltas = loadStreamingDeltas(messages);
+        return messages.stream()
+                .map(message -> {
+                    ChatProgressMerger.merge(message, streamingDeltas.get(message.getId()));
+                    return messageView(message);
+                })
                 .toList();
+    }
+
+    private Map<Long, List<ChatMessageDelta>> loadStreamingDeltas(List<ChatMessage> messages) {
+        List<Long> streamingIds = messages.stream()
+                .filter(message -> STATUS_STREAMING.equals(message.getStatus()))
+                .map(ChatMessage::getId)
+                .toList();
+        if (streamingIds.isEmpty()) {
+            return Map.of();
+        }
+        return deltaMapper.selectList(new LambdaQueryWrapper<ChatMessageDelta>()
+                        .in(ChatMessageDelta::getMessageId, streamingIds)
+                        .orderByAsc(ChatMessageDelta::getId))
+                .stream()
+                .collect(Collectors.groupingBy(ChatMessageDelta::getMessageId));
     }
 
     private ChatMessageView messageView(ChatMessage message) {
@@ -350,7 +392,7 @@ public class ChatService {
             return Map.of();
         }
         Map<Long, Agent> map = new HashMap<>();
-        agentMapper.selectBatchIds(ids).forEach(agent -> map.put(agent.getId(), agent));
+        agentMapper.selectAnyByIds(ids).forEach(agent -> map.put(agent.getId(), agent));
         return map;
     }
 

@@ -47,8 +47,33 @@ jobs:
         path: king-ai-api/target/surefire-reports/
         retention-days: 7
 
+  backend-mysql:
+    name: Backend MySQL integration tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: maven
+
+    - name: Run MySQL migration and isolation tests
+      run: mvn -B -ntp -pl king-ai-api -am test -Dtest=MySqlMigrationTest -DfailIfNoTests=false
+
+    - name: Upload MySQL test reports
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: backend-mysql-test-reports
+        path: king-ai-api/target/surefire-reports/
+        retention-days: 7
+
   frontend:
-    name: Frontend typecheck and build
+    name: Frontend lint, tests and build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,11 +92,33 @@ jobs:
     - name: Install dependencies
       run: npm ci
 
+    - name: Lint
+      run: npm run lint
+
+    - name: Unit tests
+      run: npm test
+
     - name: Type check and production build
       run: npm run build
 
     - name: Audit dependencies
       run: npm audit --audit-level=high
+
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps chromium
+
+    - name: End-to-end tests
+      run: npm run test:e2e
+
+    - name: Upload Playwright report
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: playwright-report
+        path: |
+          king-ai-ui/playwright-report/
+          king-ai-ui/test-results/
+        retention-days: 7
 
   security:
     name: Dependency, secret and misconfiguration scan
@@ -140,6 +187,13 @@ jobs:
         if compgen -G 'deploy/backup/*.sh' > /dev/null; then
           shellcheck deploy/backup/*.sh deploy/backup/tests/*.sh
         fi
+
+    - name: Compose service guardrails
+      run: |
+        set -euo pipefail
+        grep -q 'http://127.0.0.1:8080/actuator/health/readiness' docker-compose.yml
+        grep -q 'UI_CPU_LIMIT' docker-compose.yml
+        grep -q 'UI_MEMORY_LIMIT' docker-compose.yml
 
     - name: Render and validate chart
       run: deploy/helm/king-ai/tests/render_test.sh

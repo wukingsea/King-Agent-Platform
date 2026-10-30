@@ -75,6 +75,19 @@ spec:
 {{- include "king-ai.milvusEnv" . | nindent 12 }}
 {{- include "king-ai.appSecretEnv" . | nindent 12 }}
 {{- include "king-ai.adminEnv" . | nindent 12 }}
+            {{- if eq (.Values.api.export.storage | default "local") "s3" }}
+            {{- $s3 := .Values.api.export.s3 }}
+            - name: KING_AI_EXPORT_S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "api.export.s3.existingSecret is required when api.export.storage=s3" $s3.existingSecret }}
+                  key: {{ $s3.accessKeyKey | default "access-key" }}
+            - name: KING_AI_EXPORT_S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "api.export.s3.existingSecret is required when api.export.storage=s3" $s3.existingSecret }}
+                  key: {{ $s3.secretKeyKey | default "secret-key" }}
+            {{- end }}
           startupProbe:
             httpGet:
               path: /actuator/health/readiness

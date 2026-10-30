@@ -300,9 +300,9 @@ onBeforeUnmount(() => {
 
       <main class="content scroll-thin">
         <div class="content-inner">
-          <router-view v-slot="{ Component }">
+          <router-view v-slot="{ Component: PageComponent }">
             <transition name="view-fade" mode="out-in">
-              <component :is="Component" />
+              <component :is="PageComponent" />
             </transition>
           </router-view>
         </div>

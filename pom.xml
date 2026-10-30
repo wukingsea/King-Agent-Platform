@@ -30,6 +30,8 @@
         <mybatis-plus.version>3.5.18</mybatis-plus.version>
         <okhttp.version>4.12.0</okhttp.version>
         <pdfbox.version>3.0.7</pdfbox.version>
+        <testcontainers.version>1.19.7</testcontainers.version>
+        <minio.version>8.5.17</minio.version>
     </properties>
 
     <build>

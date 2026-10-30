@@ -91,13 +91,34 @@ Adapter 并暴露 `king_ai_chat_active`，设置
 
 ## 限制
 - SSE 流在 Pod 滚动升级时会被终止；断线恢复在 P2-2 实现。
-- 导出目录始终挂载：默认 emptyDir，Pod 重建后导出文件丢失（导出 TTL 为 24 小时）。需要持久化时启用 `persistence.exports.mode=pvc`，多副本需 ReadWriteMany 的 StorageClass；只有 ReadWriteOnce 时请将 `api.replicaCount` 设为 1。
+- 导出目录始终挂载：默认 emptyDir，Pod 重建后导出文件丢失（导出 TTL 为 24 小时）。需要持久化时启用 `persistence.exports.mode=pvc`，多副本需 ReadWriteMany 的 StorageClass；只有 ReadWriteOnce 时请将 `api.replicaCount` 设为 1；或改用下文的对象存储。
 - NetworkPolicy 的实际执行取决于 CNI：kind 默认 CNI 不执行 NetworkPolicy
   （仅渲染生效）；生产环境必须使用支持 NetworkPolicy 的 CNI
   （Calico/Cilium 等）并验证策略真实生效。
 
+## 合规导出存储
+- 默认 `api.export.storage=local`，导出文件写入 `persistence.exports` 对应的卷。
+- 设为 `s3` 后改用任意 S3 兼容端点（MinIO / OSS / AWS S3），多副本无需共享卷。bucket 必须预先创建，凭据放在独立 Secret 中（缺失时渲染失败）：
+
+```bash
+kubectl create secret generic king-ai-export-s3 -n king-ai \
+  --from-literal=access-key=... --from-literal=secret-key=...
+helm upgrade king-ai deploy/helm/king-ai -n king-ai \
+  --set api.export.storage=s3 \
+  --set api.export.s3.endpoint=http://minio.internal:9000 \
+  --set api.export.s3.bucket=king-ai-exports \
+  --set api.export.s3.existingSecret=king-ai-export-s3
+```
+
+- 对象键形如 `<prefix>/<spaceId>/<uuid>.<ext>`，读写均被约束在空间前缀内；更换 `prefix` 后旧导出文件仍按原键读取，但新文件写入新前缀。
+- 启用 `storage=s3` 时仍需为对象存储端点放行 NetworkPolicy 出站。
+
+## 用量与 Token 配额
+- `api.finops.quotaEnabled`（默认 `true`）控制空间月度 Token 配额用尽后是否阻断对话；`api.finops.currency` 与 `api.finops.defaultInputPricePerMillion` / `defaultOutputPricePerMillion` 决定账本币种与默认估算单价。
+- 每个空间的配额存放在数据库列 `monthly_token_quota`，由空间 `OWNER` 通过 `PUT /api/finops/quota` 设置，调整配额不需要改 values 或重启。
+
 ## 备份与恢复
-- API 的导出 PVC 路径为 `/app/data/exports`，对应 values `persistence.exports`。
+- API 的导出 PVC 路径为 `/app/data/exports`，对应 values `persistence.exports`；使用 `storage=s3` 时导出文件在对象存储中，应纳入对象存储的备份策略。
 - 备份脚本不打包进 chart；使用 `deploy/backup` 与 `deploy/backup/README.md`。
 - 启用 NetworkPolicy 时必须为数据库/Redis/Milvus/OTel/对象存储配置 CIDR；公共模型与 MCP 通过 443 放行。
 - 迁移 Job（`<fullname>-migrate`）由独立的 NetworkPolicy 管控，出站仅放行 DNS 与数据库（含内置 MySQL pod 选择器）；除此之外无任何出站权限。

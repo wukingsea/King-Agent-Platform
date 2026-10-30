@@ -148,6 +148,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "king-ai.milvusEnv" -}}
 - name: MILVUS_URL
   value: {{ include "king-ai.milvusUrl" . | quote }}
+- name: MILVUS_COLLECTION_MODE
+  value: {{ .Values.externalMilvus.collectionMode | default "shared" | quote }}
+- name: MILVUS_COLLECTION_PREFIX
+  value: {{ .Values.externalMilvus.collectionPrefix | default "king_ai_chunks_v2" | quote }}
+- name: MILVUS_PARTITIONS_NUM
+  value: {{ .Values.externalMilvus.partitionsNum | default 64 | quote }}
 {{- if .Values.externalMilvus.existingSecret }}
 - name: MILVUS_TOKEN
   valueFrom:

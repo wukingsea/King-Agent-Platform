@@ -12,7 +12,6 @@ import {
   Memo,
   Plus,
 } from '@element-plus/icons-vue'
-import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import {

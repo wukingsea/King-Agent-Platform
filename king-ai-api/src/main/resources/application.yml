@@ -50,6 +50,11 @@ king-ai:
   audit:
     enabled: ${KING_AI_AUDIT_ENABLED:true}
     retention-days: ${KING_AI_AUDIT_RETENTION_DAYS:180}
+  finops:
+    quota-enabled: ${KING_AI_FINOPS_QUOTA_ENABLED:true}
+    currency: ${KING_AI_FINOPS_CURRENCY:USD}
+    default-input-price-per-million: ${KING_AI_FINOPS_DEFAULT_INPUT_PRICE:0}
+    default-output-price-per-million: ${KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE:0}
   compliance:
     pii:
       default-enabled: ${KING_AI_PII_DEFAULT_ENABLED:true}
@@ -69,6 +74,14 @@ king-ai:
       max-batches: 100
     export:
       root-dir: ${KING_AI_EXPORT_DIR:./data/exports}
+      storage: ${KING_AI_EXPORT_STORAGE:local}
+      s3:
+        endpoint: ${KING_AI_EXPORT_S3_ENDPOINT:}
+        access-key: ${KING_AI_EXPORT_S3_ACCESS_KEY:}
+        secret-key: ${KING_AI_EXPORT_S3_SECRET_KEY:}
+        bucket: ${KING_AI_EXPORT_S3_BUCKET:}
+        prefix: ${KING_AI_EXPORT_S3_PREFIX:exports}
+        region: ${KING_AI_EXPORT_S3_REGION:}
       poll-interval-ms: 10000
       ttl-hours: ${KING_AI_EXPORT_TTL_HOURS:24}
       max-rows: ${KING_AI_EXPORT_MAX_ROWS:1000000}
@@ -101,6 +114,12 @@ king-ai:
     base-url: ${MILVUS_URL:http://localhost:19530}
     token: ${MILVUS_TOKEN:}
     timeout-seconds: 30
+    collection-mode: ${MILVUS_COLLECTION_MODE:shared}
+    collection-prefix: ${MILVUS_COLLECTION_PREFIX:king_ai_chunks_v2}
+    partitions-num: ${MILVUS_PARTITIONS_NUM:64}
+  local-vector:
+    scan-batch-size: ${KING_AI_LOCAL_VECTOR_BATCH_SIZE:2000}
+    max-scan: ${KING_AI_LOCAL_VECTOR_MAX_SCAN:200000}
   demo:
     enabled: false
   public-chat:

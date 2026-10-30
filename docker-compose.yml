@@ -120,6 +120,11 @@ services:
       REDIS_SSL_ENABLED: ${REDIS_SSL_ENABLED:-false}
       MILVUS_URL: http://milvus:19530
       MILVUS_TOKEN: ${MILVUS_TOKEN:-}
+      # shared: one collection per embedding dimension partitioned by space_id (default);
+      # per-kb: legacy one-collection-per-knowledge-base layout.
+      MILVUS_COLLECTION_MODE: ${MILVUS_COLLECTION_MODE:-shared}
+      MILVUS_COLLECTION_PREFIX: ${MILVUS_COLLECTION_PREFIX:-king_ai_chunks_v2}
+      MILVUS_PARTITIONS_NUM: ${MILVUS_PARTITIONS_NUM:-64}
       KING_AI_SECRET: "${KING_AI_SECRET:?set KING_AI_SECRET in .env}"
       KING_AI_ENCRYPTION_KEY: "${KING_AI_ENCRYPTION_KEY:?set KING_AI_ENCRYPTION_KEY in .env}"
       KING_AI_PREVIOUS_ENCRYPTION_KEYS: ${KING_AI_PREVIOUS_ENCRYPTION_KEYS:-}
@@ -131,8 +136,23 @@ services:
       KING_AI_BLOCK_PRIVATE_NETWORKS: ${KING_AI_BLOCK_PRIVATE_NETWORKS:-true}
       KING_AI_ALLOWED_OUTBOUND_HOSTS: ${KING_AI_ALLOWED_OUTBOUND_HOSTS:-}
       KING_AI_DEMO_ENABLED: ${KING_AI_DEMO_ENABLED:-false}
+      # Compliance export storage: `local` writes under the API container's ./data/exports
+      # (lost on recreate); set storage=s3 to keep exports in MinIO (bucket must already exist).
+      KING_AI_EXPORT_STORAGE: ${KING_AI_EXPORT_STORAGE:-local}
+      KING_AI_EXPORT_S3_ENDPOINT: ${KING_AI_EXPORT_S3_ENDPOINT:-}
+      KING_AI_EXPORT_S3_ACCESS_KEY: ${KING_AI_EXPORT_S3_ACCESS_KEY:-}
+      KING_AI_EXPORT_S3_SECRET_KEY: ${KING_AI_EXPORT_S3_SECRET_KEY:-}
+      KING_AI_EXPORT_S3_BUCKET: ${KING_AI_EXPORT_S3_BUCKET:-}
+      KING_AI_EXPORT_S3_PREFIX: ${KING_AI_EXPORT_S3_PREFIX:-exports}
+      KING_AI_EXPORT_S3_REGION: ${KING_AI_EXPORT_S3_REGION:-}
       PUBLIC_RATE_LIMIT_PER_MINUTE: ${PUBLIC_RATE_LIMIT_PER_MINUTE:-20}
       KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE: ${KING_AI_CHAT_MAX_CONCURRENT_PER_SPACE:-4}
+      # FinOps: reject chats once a space exhausts its monthly token quota.
+      # Prices are per 1M tokens; set them to match your supplier billing.
+      KING_AI_FINOPS_QUOTA_ENABLED: ${KING_AI_FINOPS_QUOTA_ENABLED:-true}
+      KING_AI_FINOPS_CURRENCY: ${KING_AI_FINOPS_CURRENCY:-USD}
+      KING_AI_FINOPS_DEFAULT_INPUT_PRICE: ${KING_AI_FINOPS_DEFAULT_INPUT_PRICE:-0}
+      KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE: ${KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE:-0}
       JAVA_OPTS: "${JAVA_OPTS:--XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError}"
       TZ: Asia/Shanghai
     depends_on:
@@ -145,7 +165,7 @@ services:
     ports:
       - "${API_BIND:-127.0.0.1}:${API_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/actuator/health/readiness >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -163,6 +183,20 @@ services:
       API_UPSTREAM: api:8080
     ports:
       - "${UI_PORT:-80}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "${UI_CPU_LIMIT:-1.0}"
+          memory: "${UI_MEMORY_LIMIT:-256M}"
+        reservations:
+          cpus: "${UI_CPU_RESERVATION:-0.25}"
+          memory: "${UI_MEMORY_RESERVATION:-64M}"
 
 volumes:
   mysql-data:

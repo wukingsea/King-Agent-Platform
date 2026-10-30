@@ -5,7 +5,6 @@ import {
   Check,
   Connection,
   Cpu,
-  Delete,
   Download,
   EditPen,
   Key,

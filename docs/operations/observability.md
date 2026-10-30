@@ -144,10 +144,10 @@ Timer 产生 `_seconds_count`、`_seconds_sum` 与 `_seconds_bucket`，Counter �
 
 <a id="quota-rejection"></a>
 
-1. 看 `king_ai:chat_quota_rejection_ratio5m` 与 `king_ai_chat_rejected_total{reason="space_quota"}`。
+1. 看 `king_ai:chat_quota_rejection_ratio5m`、`king_ai_chat_rejected_total{reason="space_quota"}` 与 `king_ai_finops_quota_rejected_total`。
 2. 用 `king_ai_chat_active_space` 找出高并发空间；不要查询用户级标签。
-3. 确认是正常业务峰值、配额配置过小还是异常调用。
-4. 调整空间配额需业务批准并留审计记录；不得临时移除并发保护。
+3. 确认是正常业务峰值、并发配额或月度 Token 配额配置过小，还是异常调用；`GET /api/finops/usage` 可查当月 Token 与剩余配额。
+4. 调整空间配额需业务批准并留审计记录；不得临时移除并发保护或配额检查。
 
 ### KingAiIndexFailures
 

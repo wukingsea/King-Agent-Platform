@@ -10,6 +10,9 @@
 
 king-ai-api/data/
 **/.tmp-upgrade/
+king-ai-ui/playwright-report/
+king-ai-ui/test-results/
+king-ai-ui/coverage/
 *.mv.db
 *.trace.db
 *.log

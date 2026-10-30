@@ -8,7 +8,7 @@
 
 **Tech Stack:** Java 21、Spring Boot 3.5.x、Spring MVC + SSE、MyBatis-Plus、MySQL 8、Redis 7、Milvus 2.5、S3/MinIO、OpenTelemetry、Prometheus/Grafana、Kubernetes/Helm、Vue 3 + Vite、k6。
 
-**Spec:** `review_extract.txt`（原始架构评审与 P0/P1/P2 定义）、`docs/architecture.md`（当前架构）、`README.md`（已知边界）、本文件第 1 节的验证结论。
+**Spec:** `docs/reviews/2026-10-architecture-review.md`（原始架构评审与 P0/P1/P2 定义）、`docs/architecture.md`（当前架构）、`README.md`（已知边界）、本文件第 1 节的验证结论。
 
 ---
 
@@ -40,7 +40,7 @@
 
 ### 0.2 P1 仍未收口的能力
 
-按 `review_extract.txt` 的 P1 完整清单，以下能力仍未实现。它们不是本次 8 项任务的缺陷，但属于“企业可运营”的必要条件，因此 P2 不能无条件启动，必须先过 **Gate 0**：
+按 `docs/reviews/2026-10-architecture-review.md` 的 P1 完整清单，以下能力仍未实现。它们不是本次 8 项任务的缺陷，但属于“企业可运营”的必要条件，因此 P2 不能无条件启动，必须先过 **Gate 0**：
 
 | 缺口 | 当前状态 | 风险 |
 | --- | --- | --- |

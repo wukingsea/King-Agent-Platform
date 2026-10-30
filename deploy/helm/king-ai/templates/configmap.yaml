@@ -12,6 +12,15 @@ data:
   KING_AI_BLOCK_PRIVATE_NETWORKS: "true"
   KING_AI_DEMO_ENABLED: "false"
   KING_AI_EXPORT_DIR: "/app/data/exports"
+  KING_AI_EXPORT_STORAGE: {{ .Values.api.export.storage | default "local" | quote }}
+  KING_AI_EXPORT_S3_ENDPOINT: {{ .Values.api.export.s3.endpoint | default "" | quote }}
+  KING_AI_EXPORT_S3_BUCKET: {{ .Values.api.export.s3.bucket | default "" | quote }}
+  KING_AI_EXPORT_S3_PREFIX: {{ .Values.api.export.s3.prefix | default "exports" | quote }}
+  KING_AI_EXPORT_S3_REGION: {{ .Values.api.export.s3.region | default "" | quote }}
+  KING_AI_FINOPS_QUOTA_ENABLED: {{ .Values.api.finops.quotaEnabled | default true | quote }}
+  KING_AI_FINOPS_CURRENCY: {{ .Values.api.finops.currency | default "USD" | quote }}
+  KING_AI_FINOPS_DEFAULT_INPUT_PRICE: {{ .Values.api.finops.defaultInputPricePerMillion | default 0 | quote }}
+  KING_AI_FINOPS_DEFAULT_OUTPUT_PRICE: {{ .Values.api.finops.defaultOutputPricePerMillion | default 0 | quote }}
   JAVA_OPTS: {{ .Values.api.javaOpts | quote }}
   OTEL_TRACING_EXPORT_ENABLED: {{ .Values.observability.tracing.enabled | quote }}
   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: {{ .Values.observability.tracing.endpoint | quote }}

@@ -1,8 +1,11 @@
 import { ApiError, authHeaders } from './http'
 import type {
   ChatDegradedEvent,
+  ChatDone,
+  ChatMeta,
   ChatRetryEvent,
   ChatStreamHandlers,
+  ChatUsage,
   CitationItem,
   ToolApprovalEvent,
   ToolCallEvent,
@@ -23,48 +26,53 @@ function dispatch(
   handlers: ChatStreamHandlers,
 ) {
   if (!data) return
-  let payload: any
+  let payload: Record<string, unknown>
   try {
     payload = JSON.parse(data)
   } catch {
     return
   }
+  if (!payload || typeof payload !== 'object') return
   switch (event) {
     case 'meta':
-      handlers.onMeta?.(payload)
+      handlers.onMeta?.(payload as unknown as ChatMeta)
       break
     case 'citation':
-      handlers.onCitation?.(payload as CitationItem)
+      handlers.onCitation?.(payload as unknown as CitationItem)
       break
     case 'reasoning':
-      if (payload.delta) handlers.onReasoning?.(payload.delta)
+      if (typeof payload.delta === 'string' && payload.delta) {
+        handlers.onReasoning?.(payload.delta)
+      }
       break
     case 'content':
-      if (payload.delta) handlers.onContent?.(payload.delta)
+      if (typeof payload.delta === 'string' && payload.delta) {
+        handlers.onContent?.(payload.delta)
+      }
       break
     case 'tool_call':
-      handlers.onToolCall?.(payload as ToolCallEvent)
+      handlers.onToolCall?.(payload as unknown as ToolCallEvent)
       break
     case 'tool_result':
-      handlers.onToolResult?.(payload as ToolResultEvent)
+      handlers.onToolResult?.(payload as unknown as ToolResultEvent)
       break
     case 'tool_approval':
-      handlers.onToolApproval?.(payload as ToolApprovalEvent)
+      handlers.onToolApproval?.(payload as unknown as ToolApprovalEvent)
       break
     case 'retry':
-      handlers.onRetry?.(payload as ChatRetryEvent)
+      handlers.onRetry?.(payload as unknown as ChatRetryEvent)
       break
     case 'degraded':
-      handlers.onDegraded?.(payload as ChatDegradedEvent)
+      handlers.onDegraded?.(payload as unknown as ChatDegradedEvent)
       break
     case 'usage':
-      handlers.onUsage?.(payload)
+      handlers.onUsage?.(payload as unknown as ChatUsage)
       break
     case 'error':
-      handlers.onError?.(payload.message || '生成失败')
+      handlers.onError?.(typeof payload.message === 'string' ? payload.message : '生成失败')
       break
     case 'done':
-      handlers.onDone?.(payload)
+      handlers.onDone?.(payload as unknown as ChatDone)
       break
   }
 }

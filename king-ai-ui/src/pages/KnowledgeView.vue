@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import {
+  ElMessage,
+  ElMessageBox,
+  type FormInstance,
+  type FormRules,
+  type UploadRequestOptions,
+} from 'element-plus'
 import {
   Collection,
   Delete,
@@ -355,7 +361,7 @@ async function submitDoc() {
   }
 }
 
-async function handleUpload(options: any) {
+async function handleUpload(options: UploadRequestOptions) {
   if (!selectedId.value) return
   const file: File = options.file
   const lower = file.name.toLowerCase()

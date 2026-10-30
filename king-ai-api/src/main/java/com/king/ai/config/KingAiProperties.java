@@ -5,7 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @ConfigurationProperties(prefix = "king-ai")
@@ -22,6 +24,7 @@ public class KingAiProperties {
     private Rag rag = new Rag();
     private Index index = new Index();
     private Milvus milvus = new Milvus();
+    private LocalVector localVector = new LocalVector();
     private Demo demo = new Demo();
     private PublicChat publicChat = new PublicChat();
     private Security security = new Security();
@@ -29,6 +32,7 @@ public class KingAiProperties {
     private Admin admin = new Admin();
     private Audit audit = new Audit();
     private Compliance compliance = new Compliance();
+    private Finops finops = new Finops();
 
     @Data
     public static class Chat {
@@ -73,6 +77,22 @@ public class KingAiProperties {
         private String baseUrl = "http://localhost:19530";
         private String token = "";
         private int timeoutSeconds = 30;
+        /**
+         * shared (default) keeps one collection per embedding dimension with space_id as the
+         * partition key; per-kb keeps the legacy one-collection-per-knowledge-base layout.
+         */
+        private String collectionMode = "shared";
+        private String collectionPrefix = "king_ai_chunks_v2";
+        /** Partition count for shared collections; fixed at creation time. */
+        private int partitionsNum = 64;
+    }
+
+    @Data
+    public static class LocalVector {
+        /** Rows read per page while scanning a knowledge base. */
+        private int scanBatchSize = 2000;
+        /** Upper bound of rows scored per query; 0 disables the cap. */
+        private int maxScan = 200_000;
     }
 
     @Data
@@ -163,11 +183,43 @@ public class KingAiProperties {
         private int ttlHours = 24;
         private long maxRows = 1_000_000;
         private int batchSize = 500;
+        /** Storage backend: {@code local} (default) or {@code s3} (S3-compatible, e.g. MinIO). */
+        private String storage = "local";
+        private S3 s3 = new S3();
+    }
+
+    @Data
+    public static class S3 {
+        private String endpoint = "";
+        private String accessKey = "";
+        private String secretKey = "";
+        private String bucket = "";
+        /** Object key prefix; the space id is appended below it. */
+        private String prefix = "exports";
+        private String region = "";
     }
 
     @Data
     public static class AccessReview {
         private String cron = "0 0 4 1 1,4,7,10 *";
         private int staleDays = 90;
+    }
+
+    @Data
+    public static class Finops {
+        /** Reject chat requests once a space exhausts its monthly token quota. */
+        private boolean quotaEnabled = true;
+        private String currency = "USD";
+        /** Fallback price per 1M tokens, used when the model has no explicit price. */
+        private double defaultInputPricePerMillion = 0;
+        private double defaultOutputPricePerMillion = 0;
+        /** Per-model price overrides keyed by the model identifier sent to the supplier. */
+        private Map<String, ModelPrice> prices = new LinkedHashMap<>();
+    }
+
+    @Data
+    public static class ModelPrice {
+        private double inputPerMillion = 0;
+        private double outputPerMillion = 0;
     }
 }
