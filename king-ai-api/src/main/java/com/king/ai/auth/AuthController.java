@@ -4,6 +4,7 @@ import com.king.ai.audit.AuditLogService;
 import com.king.ai.auth.dto.AuthResponse;
 import com.king.ai.auth.dto.ChangePasswordRequest;
 import com.king.ai.auth.dto.LoginRequest;
+import com.king.ai.auth.dto.LoginSessionView;
 import com.king.ai.auth.dto.MfaDisableRequest;
 import com.king.ai.auth.dto.MfaEnableRequest;
 import com.king.ai.auth.dto.MfaEnableResponse;
@@ -19,6 +20,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -26,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -44,7 +49,8 @@ public class AuthController {
                                            HttpServletResponse response) {
         AuthResponse data;
         try {
-            data = authService.login(request, clientIpResolver.resolve(servletRequest));
+            data = authService.login(request, clientIpResolver.resolve(servletRequest),
+                    userAgent(servletRequest));
         } catch (RuntimeException ex) {
             auditLogService.loginFailed(servletRequest, request.username(), ex.getMessage());
             throw ex;
@@ -63,7 +69,8 @@ public class AuthController {
                                                HttpServletResponse response) {
         AuthResponse data;
         try {
-            data = authService.verifyMfa(request, clientIpResolver.resolve(servletRequest));
+            data = authService.verifyMfa(request, clientIpResolver.resolve(servletRequest),
+                    userAgent(servletRequest));
         } catch (RuntimeException ex) {
             auditLogService.loginFailed(servletRequest, null, ex.getMessage());
             throw ex;
@@ -98,11 +105,28 @@ public class AuthController {
     public ApiResponse<Void> logout(@RequestHeader(value = "Authorization", required = false) String authorization,
                                     HttpServletRequest request,
                                     HttpServletResponse response) {
-        String token = BearerTokens.extract(authorization);
-        if (token == null) {
-            token = sessionCookies.find(request);
-        }
-        authService.logout(token);
+        authService.logout(currentToken(authorization, request));
+        sessionCookies.clear(response);
+        return ApiResponse.ok();
+    }
+
+    @GetMapping("/sessions")
+    public ApiResponse<List<LoginSessionView>> sessions(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            HttpServletRequest request) {
+        return ApiResponse.ok(authService.sessions(currentToken(authorization, request)));
+    }
+
+    @DeleteMapping("/sessions/others")
+    public ApiResponse<Integer> logoutOtherSessions(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            HttpServletRequest request) {
+        return ApiResponse.ok(authService.logoutOtherSessions(currentToken(authorization, request)));
+    }
+
+    @DeleteMapping("/sessions")
+    public ApiResponse<Void> logoutAll(HttpServletResponse response) {
+        authService.logoutAll();
         sessionCookies.clear(response);
         return ApiResponse.ok();
     }
@@ -118,5 +142,14 @@ public class AuthController {
         authService.changePassword(request);
         sessionCookies.clear(response);
         return ApiResponse.ok();
+    }
+
+    private String currentToken(String authorization, HttpServletRequest request) {
+        String token = BearerTokens.extract(authorization);
+        return token != null ? token : sessionCookies.find(request);
+    }
+
+    private String userAgent(HttpServletRequest request) {
+        return request.getHeader(HttpHeaders.USER_AGENT);
     }
 }

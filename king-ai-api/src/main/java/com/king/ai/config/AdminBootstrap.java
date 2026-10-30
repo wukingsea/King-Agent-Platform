@@ -1,6 +1,7 @@
 package com.king.ai.config;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.king.ai.auth.PasswordHistoryService;
 import com.king.ai.auth.TokenStore;
 import com.king.ai.system.entity.Space;
 import com.king.ai.system.entity.User;
@@ -43,6 +44,7 @@ public class AdminBootstrap implements ApplicationRunner {
     private final UserSpaceMapper userSpaceMapper;
     private final PasswordEncoder passwordEncoder;
     private final TokenStore tokenStore;
+    private final PasswordHistoryService passwordHistoryService;
     private final KingAiProperties properties;
     private final Environment environment;
 
@@ -69,7 +71,8 @@ public class AdminBootstrap implements ApplicationRunner {
 
         User user = new User();
         user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(password));
+        String encoded = passwordEncoder.encode(password);
+        user.setPassword(encoded);
         user.setNickname(trimToNull(config.getNickname()) == null ? username : config.getNickname().trim());
         user.setRole("ADMIN");
         user.setStatus(0);
@@ -84,6 +87,7 @@ public class AdminBootstrap implements ApplicationRunner {
             return;
         }
 
+        passwordHistoryService.record(user.getId(), encoded);
         Space space = ensureSpace(config);
         ensureOwner(user, space);
         log.info("Bootstrapped initial administrator '{}' in space '{}'; a password change is required at first login",
@@ -119,9 +123,11 @@ public class AdminBootstrap implements ApplicationRunner {
             return;
         }
         String password = requireInitialPassword();
-        seeded.setPassword(passwordEncoder.encode(password));
+        String encoded = passwordEncoder.encode(password);
+        seeded.setPassword(encoded);
         seeded.setMustChangePassword(1);
         userMapper.updateById(seeded);
+        passwordHistoryService.record(seeded.getId(), encoded);
         tokenStore.deleteByUserId(seeded.getId());
         log.warn("Rotated the legacy demo administrator password; a password change is required at next login");
     }

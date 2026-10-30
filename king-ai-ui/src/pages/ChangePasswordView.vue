@@ -7,6 +7,7 @@ import BrandLogo from '@/components/BrandLogo.vue'
 import { authApi } from '@/api'
 import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
+import { PASSWORD_PATTERN, PASSWORD_RULE_MESSAGE } from '@/utils/password'
 
 const auth = useAuthStore()
 const router = useRouter()
@@ -20,8 +21,8 @@ const rules: FormRules = {
   newPassword: [
     { required: true, message: '请输入新密码', trigger: 'blur' },
     {
-      pattern: /^(?=.*[A-Za-z])(?=.*\d).{8,72}$/,
-      message: '需为 8-72 位，且同时包含字母和数字',
+      pattern: PASSWORD_PATTERN,
+      message: PASSWORD_RULE_MESSAGE,
       trigger: 'blur',
     },
   ],
@@ -98,7 +99,7 @@ async function submit() {
             v-model="form.newPassword"
             type="password"
             show-password
-            placeholder="8-72 位，包含字母和数字"
+            placeholder="8-72 位，包含大小写字母和数字"
             autocomplete="new-password"
           >
             <template #prefix><el-icon><Lock /></el-icon></template>

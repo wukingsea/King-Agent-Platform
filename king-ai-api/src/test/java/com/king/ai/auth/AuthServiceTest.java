@@ -46,6 +46,7 @@ class AuthServiceTest {
     private KingAiProperties properties;
     private MfaChallengeService mfaChallengeService;
     private MfaService mfaService;
+    private PasswordHistoryService passwordHistoryService;
     private AuthService service;
 
     @BeforeEach
@@ -58,9 +59,10 @@ class AuthServiceTest {
         properties = mock(KingAiProperties.class);
         mfaChallengeService = mock(MfaChallengeService.class);
         mfaService = mock(MfaService.class);
+        passwordHistoryService = mock(PasswordHistoryService.class);
         when(properties.getMfa()).thenReturn(new KingAiProperties.Mfa());
         service = new AuthService(userMapper, userService, passwordEncoder, tokenStore, attemptGuard,
-                properties, mfaChallengeService, mfaService);
+                properties, mfaChallengeService, mfaService, passwordHistoryService);
     }
 
     @Test
@@ -73,7 +75,7 @@ class AuthServiceTest {
         when(userService.view(user)).thenReturn(new UserView(7L, "alice", "Alice", "alice@example.com",
                 "USER", 0, List.of(), 0, LocalDateTime.now()));
 
-        AuthResponse response = service.login(new LoginRequest("Alice ", "pw"), "1.2.3.4");
+        AuthResponse response = service.login(new LoginRequest("Alice ", "pw"), "1.2.3.4", "JUnit");
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<LambdaUpdateWrapper<User>> captor =
@@ -109,7 +111,7 @@ class AuthServiceTest {
         when(userMapper.update(any(), any()))
                 .thenThrow(new DataAccessResourceFailureException("db"));
 
-        AuthResponse response = service.login(new LoginRequest("alice", "pw"), "1.2.3.4");
+        AuthResponse response = service.login(new LoginRequest("alice", "pw"), "1.2.3.4", "JUnit");
 
         assertThat(response.token()).isNotBlank();
     }
@@ -122,12 +124,12 @@ class AuthServiceTest {
         when(passwordEncoder.matches("pw", "hash")).thenReturn(true);
         when(mfaChallengeService.issue(7L)).thenReturn("challenge");
 
-        AuthResponse response = service.login(new LoginRequest("alice", "pw"), "1.2.3.4");
+        AuthResponse response = service.login(new LoginRequest("alice", "pw"), "1.2.3.4", "JUnit");
 
         assertThat(response.mfaRequired()).isTrue();
         assertThat(response.mfaChallenge()).isEqualTo("challenge");
         assertThat(response.token()).isNull();
-        verify(tokenStore, never()).save(any(), any(), any());
+        verify(tokenStore, never()).save(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -139,7 +141,7 @@ class AuthServiceTest {
         when(mfaService.verifyForLogin(user, "000000")).thenReturn(false);
 
         assertThatThrownBy(() -> service.verifyMfa(
-                new MfaVerifyRequest("challenge", "000000"), "1.2.3.4"))
+                new MfaVerifyRequest("challenge", "000000"), "1.2.3.4", "JUnit"))
                 .isInstanceOf(BizException.class)
                 .hasMessage("验证码不正确");
         verify(attemptGuard).fail("alice", "1.2.3.4");
@@ -157,7 +159,7 @@ class AuthServiceTest {
         when(userService.view(user)).thenReturn(new UserView(7L, "alice", "Alice", "alice@example.com",
                 "USER", 0, List.of(), 0, LocalDateTime.now()));
 
-        AuthResponse response = service.verifyMfa(new MfaVerifyRequest("challenge", "123456"), "1.2.3.4");
+        AuthResponse response = service.verifyMfa(new MfaVerifyRequest("challenge", "123456"), "1.2.3.4", "JUnit");
 
         assertThat(response.token()).isNotBlank();
         assertThat(response.mfaRequired()).isFalse();

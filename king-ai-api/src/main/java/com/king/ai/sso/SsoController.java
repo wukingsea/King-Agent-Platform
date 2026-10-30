@@ -11,6 +11,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -51,7 +52,8 @@ public class SsoController {
                 throw new com.king.ai.common.BizException(401, errorDescription);
             }
             User user = ssoService.callback(code, state);
-            AuthResponse data = authService.completeLogin(user);
+            AuthResponse data = authService.completeLogin(user, clientIpResolver.resolve(request),
+                    request.getHeader(HttpHeaders.USER_AGENT));
             sessionCookies.write(response, data.token());
             auditLogService.loginSucceeded(request, data.user(), data.currentSpaceId());
             response.sendRedirect(ssoService.successRedirect());

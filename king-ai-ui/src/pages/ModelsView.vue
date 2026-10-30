@@ -38,6 +38,8 @@ const supplierPage = ref(1)
 const supplierTotal = ref(0)
 const supplierPageSize = 12
 const models = ref<ModelView[]>([])
+const modelPage = ref(1)
+const modelPageSize = 12
 const keyword = ref('')
 const filterSupplierId = ref<number | undefined>()
 const filterType = ref<string | undefined>()
@@ -125,6 +127,9 @@ const chatCount = computed(() => models.value.filter((model) => model.type === '
 const embeddingCount = computed(
   () => models.value.filter((model) => model.type === 'EMBEDDING').length,
 )
+const pagedModels = computed(() =>
+  models.value.slice((modelPage.value - 1) * modelPageSize, modelPage.value * modelPageSize),
+)
 const totalUsage = computed(() =>
   models.value.reduce((total, model) => total + (model.usageCount || 0), 0),
 )
@@ -163,6 +168,7 @@ async function loadAll() {
     supplierTotal.value = supplierPageResult.total
     supplierOptions.value = supplierAll
     models.value = modelList
+    clampModelPage()
     if (!supplierPageResult.list.length && supplierPageResult.total > 0 && supplierPage.value > 1) {
       supplierPage.value = Math.max(1, Math.ceil(supplierPageResult.total / supplierPageSize))
       await loadAll()
@@ -180,15 +186,26 @@ function changeSupplierPage(page: number) {
 }
 
 async function loadModels() {
+  modelPage.value = 1
   try {
     models.value = await modelApi.list({
       supplierId: filterSupplierId.value,
       type: filterType.value,
       keyword: keyword.value.trim() || undefined,
     })
+    clampModelPage()
   } catch (error) {
     ElMessage.error(error instanceof ApiError ? error.message : '加载模型失败')
   }
+}
+
+function clampModelPage() {
+  const lastPage = Math.max(1, Math.ceil(models.value.length / modelPageSize))
+  if (modelPage.value > lastPage) modelPage.value = lastPage
+}
+
+function changeModelPage(page: number) {
+  modelPage.value = page
 }
 
 function openCreateSupplier() {
@@ -588,7 +605,7 @@ onMounted(loadAll)
       </div>
 
       <div class="panel table-panel">
-        <el-table v-loading="loading" :data="models" style="width: 100%">
+        <el-table v-loading="loading" :data="pagedModels" style="width: 100%">
           <el-table-column label="模型名称" min-width="200">
             <template #default="{ row }">
               <div class="model-cell">
@@ -646,6 +663,16 @@ onMounted(loadAll)
             </EmptyState>
           </template>
         </el-table>
+      </div>
+      <div v-if="models.length > modelPageSize" class="list-pagination">
+        <el-pagination
+          background
+          layout="prev, pager, next"
+          :current-page="modelPage"
+          :page-size="modelPageSize"
+          :total="models.length"
+          @current-change="changeModelPage"
+        />
       </div>
     </template>
 

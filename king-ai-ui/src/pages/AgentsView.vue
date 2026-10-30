@@ -197,8 +197,8 @@ async function loadAgents() {
 async function loadStats() {
   try {
     stats.value = await workspaceApi.stats()
-  } catch {
-    /* summary counts are optional */
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '加载工作台统计失败')
   }
 }
 
@@ -616,7 +616,7 @@ function openPublic(agent: AgentView) {
     ElMessage.warning('请先发布智能体')
     return
   }
-  window.open(publicUrl(agent), '_blank')
+  window.open(publicUrl(agent), '_blank', 'noopener,noreferrer')
 }
 
 async function remove(agent: AgentView) {

@@ -33,6 +33,7 @@ const auth = useAuthStore()
 const router = useRouter()
 
 const loading = ref(true)
+const loadError = ref('')
 const stats = ref<WorkspaceStatsView>({
   agents: 0,
   publishedAgents: 0,
@@ -103,12 +104,9 @@ const quickLinks = computed(() => [
   },
 ])
 
-function fill<T>(result: PromiseSettledResult<T>, setter: (value: T) => void) {
-  if (result.status === 'fulfilled') setter(result.value)
-}
-
 async function load() {
   loading.value = true
+  loadError.value = ''
   const [statsRes, mcpRes, modelRes, sessionRes] =
     await Promise.allSettled([
       workspaceApi.stats(),
@@ -116,13 +114,20 @@ async function load() {
       modelApi.list(),
       chatApi.sessions({ page: 1, size: 6 }),
     ])
-  fill(statsRes, (value) => (stats.value = value))
-  fill(mcpRes, (value) => (mcps.value = value))
-  fill(modelRes, (value) => (models.value = value))
+  const failed: string[] = []
+  if (statsRes.status === 'fulfilled') stats.value = statsRes.value
+  else failed.push('工作台统计')
+  if (mcpRes.status === 'fulfilled') mcps.value = mcpRes.value
+  else failed.push('MCP 服务')
+  if (modelRes.status === 'fulfilled') models.value = modelRes.value
+  else failed.push('模型列表')
   if (sessionRes.status === 'fulfilled') {
     sessions.value = sessionRes.value.list
     sessionTotal.value = sessionRes.value.total
+  } else {
+    failed.push('最近会话')
   }
+  if (failed.length) loadError.value = `${failed.join('、')}加载失败，请检查网络后重试`
   loading.value = false
 }
 
@@ -135,6 +140,18 @@ onMounted(load)
 
 <template>
   <div class="page">
+    <el-alert
+      v-if="loadError"
+      class="load-alert"
+      type="warning"
+      show-icon
+      :closable="false"
+    >
+      <template #title>
+        {{ loadError }}
+        <el-button link type="primary" size="small" @click="load">重试</el-button>
+      </template>
+    </el-alert>
     <section class="hero panel">
       <div class="hero-copy">
         <div class="hero-eyebrow">
@@ -334,6 +351,10 @@ onMounted(load)
 </template>
 
 <style scoped>
+.load-alert {
+  margin-bottom: 16px;
+}
+
 .hero {
   position: relative;
   display: grid;

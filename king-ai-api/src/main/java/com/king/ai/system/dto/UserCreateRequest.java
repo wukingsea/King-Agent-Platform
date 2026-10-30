@@ -1,5 +1,6 @@
 package com.king.ai.system.dto;
 
+import com.king.ai.auth.PasswordRules;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -14,7 +15,7 @@ public record UserCreateRequest(
         String username,
 
         @NotBlank(message = "请输入初始密码")
-        @Size(min = 6, max = 72, message = "密码长度需为 6-72 位")
+        @Pattern(regexp = PasswordRules.REGEX, message = PasswordRules.MESSAGE)
         String password,
 
         @Size(max = 50, message = "昵称过长")

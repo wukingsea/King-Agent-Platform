@@ -15,6 +15,7 @@ import {
   MagicStick,
   Memo,
   Menu,
+  Monitor,
   Odometer,
   OfficeBuilding,
   SwitchButton,
@@ -22,11 +23,13 @@ import {
   User,
 } from '@element-plus/icons-vue'
 import BrandLogo from './BrandLogo.vue'
+import LoginSessionsDialog from './LoginSessionsDialog.vue'
 import MfaSettingsDialog from './MfaSettingsDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { authApi, systemApi } from '@/api'
 import { ApiError } from '@/api/http'
 import type { SpaceRole } from '@/api/types'
+import { PASSWORD_PATTERN, PASSWORD_RULE_MESSAGE } from '@/utils/password'
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -37,6 +40,7 @@ const online = ref(true)
 const pwdVisible = ref(false)
 const pwdLoading = ref(false)
 const mfaVisible = ref(false)
+const sessionsVisible = ref(false)
 const pwdForm = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 
 interface NavItem {
@@ -143,6 +147,9 @@ function handleUserCommand(command: string) {
   if (command === 'mfa') {
     mfaVisible.value = true
   }
+  if (command === 'sessions') {
+    sessionsVisible.value = true
+  }
   if (command === 'logout') {
     auth.logout().finally(() => router.replace({ name: 'login' }))
   }
@@ -153,8 +160,8 @@ async function submitPassword() {
     ElMessage.warning('请输入当前密码')
     return
   }
-  if (pwdForm.newPassword.length < 8 || pwdForm.newPassword.length > 72) {
-    ElMessage.warning('新密码长度需为 8-72 位')
+  if (!PASSWORD_PATTERN.test(pwdForm.newPassword)) {
+    ElMessage.warning(PASSWORD_RULE_MESSAGE)
     return
   }
   if (pwdForm.newPassword !== pwdForm.confirm) {
@@ -262,6 +269,10 @@ onBeforeUnmount(() => {
                 <el-icon><Key /></el-icon>
                 账号安全
               </el-dropdown-item>
+              <el-dropdown-item command="sessions">
+                <el-icon><Monitor /></el-icon>
+                登录设备
+              </el-dropdown-item>
               <el-dropdown-item command="logout" divided>
                 <el-icon><SwitchButton /></el-icon>
                 退出登录
@@ -330,7 +341,13 @@ onBeforeUnmount(() => {
           <el-input v-model="pwdForm.oldPassword" type="password" show-password autocomplete="current-password" />
         </el-form-item>
         <el-form-item label="新密码">
-          <el-input v-model="pwdForm.newPassword" type="password" show-password autocomplete="new-password" />
+          <el-input
+            v-model="pwdForm.newPassword"
+            type="password"
+            show-password
+            autocomplete="new-password"
+            :placeholder="PASSWORD_RULE_MESSAGE"
+          />
         </el-form-item>
         <el-form-item label="确认新密码">
           <el-input v-model="pwdForm.confirm" type="password" show-password autocomplete="new-password" />
@@ -344,6 +361,7 @@ onBeforeUnmount(() => {
     </el-dialog>
 
     <MfaSettingsDialog v-model="mfaVisible" />
+    <LoginSessionsDialog v-model="sessionsVisible" />
   </div>
 </template>
 

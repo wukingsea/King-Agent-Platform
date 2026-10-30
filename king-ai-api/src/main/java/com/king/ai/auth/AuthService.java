@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.king.ai.auth.dto.AuthResponse;
 import com.king.ai.auth.dto.ChangePasswordRequest;
 import com.king.ai.auth.dto.LoginRequest;
+import com.king.ai.auth.dto.LoginSessionView;
 import com.king.ai.auth.dto.MfaVerifyRequest;
 import com.king.ai.common.BizException;
 import com.king.ai.common.Ids;
@@ -20,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,8 +39,9 @@ public class AuthService {
     private final KingAiProperties properties;
     private final MfaChallengeService mfaChallengeService;
     private final MfaService mfaService;
+    private final PasswordHistoryService passwordHistoryService;
 
-    public AuthResponse login(LoginRequest request, String clientIp) {
+    public AuthResponse login(LoginRequest request, String clientIp, String userAgent) {
         String username = request.username().trim().toLowerCase();
         attemptGuard.check(username, clientIp);
         User user = userService.findByUsername(username);
@@ -53,14 +56,14 @@ public class AuthService {
         if (mfaRequired(user)) {
             return new AuthResponse(null, null, List.of(), null, true, mfaChallengeService.issue(user.getId()));
         }
-        return completeLogin(user);
+        return completeLogin(user, clientIp, userAgent);
     }
 
     /**
      * Completes a login after the password (and, when enabled, the second factor) has been
      * verified. Shared with the OIDC callback so both flows issue identical sessions.
      */
-    public AuthResponse completeLogin(User user) {
+    public AuthResponse completeLogin(User user, String clientIp, String userAgent) {
         try {
             userMapper.update(null, new LambdaUpdateWrapper<User>()
                     .eq(User::getId, user.getId())
@@ -69,7 +72,7 @@ public class AuthService {
             log.warn("Failed to record last login time: {}", ex.getClass().getSimpleName());
         }
         String token = Ids.token();
-        tokenStore.save(token, user.getId(), properties.getSessionTtl());
+        tokenStore.save(token, user.getId(), properties.getSessionTtl(), clientIp, userAgent);
         List<SpaceView> spaces = userService.spacesFor(user);
         Long currentSpaceId = spaces.stream()
                 .filter(space -> space.status() != null && space.status() == 0)
@@ -79,7 +82,7 @@ public class AuthService {
         return new AuthResponse(token, userService.view(user), spaces, currentSpaceId);
     }
 
-    public AuthResponse verifyMfa(MfaVerifyRequest request, String clientIp) {
+    public AuthResponse verifyMfa(MfaVerifyRequest request, String clientIp, String userAgent) {
         Long userId = mfaChallengeService.verify(request.challenge());
         User user = userService.require(userId);
         if (user.getStatus() != null && user.getStatus() != 0) {
@@ -93,7 +96,7 @@ public class AuthService {
             throw BizException.unauthorized("验证码不正确");
         }
         attemptGuard.success(user.getUsername(), clientIp);
-        return completeLogin(user);
+        return completeLogin(user, clientIp, userAgent);
     }
 
     private boolean mfaRequired(User user) {
@@ -113,18 +116,39 @@ public class AuthService {
         }
     }
 
+    @Transactional
     public void changePassword(ChangePasswordRequest request) {
         UserPrincipal principal = RequestContext.require();
         User user = userService.require(principal.id());
         if (!passwordEncoder.matches(request.oldPassword(), user.getPassword())) {
             throw BizException.badRequest("原密码不正确");
         }
+        PasswordRules.validate(request.newPassword());
         if (request.oldPassword().equals(request.newPassword())) {
             throw BizException.badRequest("新密码不能与原密码相同");
         }
-        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        passwordHistoryService.ensureNotReused(user.getId(), request.newPassword());
+        String encoded = passwordEncoder.encode(request.newPassword());
+        user.setPassword(encoded);
         user.setMustChangePassword(0);
         OptimisticLocks.requireUpdated(userMapper.updateById(user), "用户");
+        passwordHistoryService.record(user.getId(), encoded);
         tokenStore.deleteByUserId(user.getId());
+    }
+
+    public List<LoginSessionView> sessions(String currentToken) {
+        return tokenStore.sessions(RequestContext.require().id(), currentToken);
+    }
+
+    public int logoutOtherSessions(String currentToken) {
+        if (Texts.isBlank(currentToken)) {
+            throw BizException.badRequest("缺少当前会话标识");
+        }
+        return tokenStore.deleteOthers(RequestContext.require().id(), currentToken);
+    }
+
+    public void logoutAll() {
+        UserPrincipal principal = RequestContext.require();
+        tokenStore.deleteByUserId(principal.id());
     }
 }

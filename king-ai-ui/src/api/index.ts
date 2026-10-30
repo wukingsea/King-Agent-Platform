@@ -37,6 +37,7 @@ import type {
   KnowledgeDocView,
   KnowledgeSearchResult,
   LoginRequest,
+  LoginSessionView,
   McpSaveRequest,
   McpTestResult,
   McpView,
@@ -83,6 +84,10 @@ export const authApi = {
   me: () => request<AuthResponse>({ url: '/auth/me', method: 'get' }),
   changePassword: (data: ChangePasswordRequest) =>
     request<void>({ url: '/auth/password', method: 'put', data }),
+  sessions: () => request<LoginSessionView[]>({ url: '/auth/sessions', method: 'get' }),
+  logoutOtherSessions: () =>
+    request<number>({ url: '/auth/sessions/others', method: 'delete' }),
+  logoutAllSessions: () => request<void>({ url: '/auth/sessions', method: 'delete' }),
   ssoConfig: () => request<SsoConfig>({ url: '/auth/sso/config', method: 'get' }),
   mfaStatus: () => request<MfaStatusView>({ url: '/auth/mfa', method: 'get' }),
   setupMfa: (password: string) =>

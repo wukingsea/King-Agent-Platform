@@ -2,6 +2,8 @@ package com.king.ai.system;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.king.ai.auth.PasswordHistoryService;
+import com.king.ai.auth.PasswordRules;
 import com.king.ai.auth.TokenStore;
 import com.king.ai.common.BizException;
 import com.king.ai.common.OptimisticLocks;
@@ -37,6 +39,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final TokenStore tokenStore;
     private final LicenseService licenseService;
+    private final PasswordHistoryService passwordHistoryService;
 
     public User require(Long id) {
         if (id == null) {
@@ -96,15 +99,18 @@ public class UserService {
             throw BizException.conflict("账号已存在");
         }
         validateSpaces(request.spaceIds());
+        PasswordRules.validate(request.password());
         User user = new User();
         user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(request.password()));
+        String encoded = passwordEncoder.encode(request.password());
+        user.setPassword(encoded);
         user.setNickname(Texts.blankToDefault(request.nickname(), username));
         user.setEmail(Texts.trimTo(request.email(), 100));
         user.setRole(request.role());
         user.setStatus(request.status());
         user.setMustChangePassword(1);
         userMapper.insert(user);
+        passwordHistoryService.record(user.getId(), encoded);
         replaceSpaces(user.getId(), request.spaceIds());
         return view(user);
     }
@@ -133,11 +139,19 @@ public class UserService {
         return view(user);
     }
 
+    @Transactional
     public void resetPassword(Long id, String newPassword) {
         User user = require(id);
-        user.setPassword(passwordEncoder.encode(newPassword));
+        PasswordRules.validate(newPassword);
+        if (passwordEncoder.matches(newPassword, user.getPassword())) {
+            throw BizException.badRequest("新密码不能与当前密码相同");
+        }
+        passwordHistoryService.ensureNotReused(id, newPassword);
+        String encoded = passwordEncoder.encode(newPassword);
+        user.setPassword(encoded);
         user.setMustChangePassword(1);
         OptimisticLocks.requireUpdated(userMapper.updateById(user), "用户");
+        passwordHistoryService.record(id, encoded);
         tokenStore.deleteByUserId(id);
     }
 

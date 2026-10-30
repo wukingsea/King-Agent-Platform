@@ -82,6 +82,15 @@ export interface ChangePasswordRequest {
   newPassword: string
 }
 
+export interface LoginSessionView {
+  id: string
+  clientIp: string
+  userAgent: string
+  createdAt: string
+  expiresAt: string
+  current: boolean
+}
+
 export interface SsoConfig {
   enabled: boolean
   loginUrl?: string | null

@@ -9,6 +9,7 @@ import { ApiError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import type { SpaceView, UserCreateRequest, UserView } from '@/api/types'
 import { formatDate, fromNow } from '@/utils/format'
+import { PASSWORD_PATTERN, PASSWORD_RULE_MESSAGE } from '@/utils/password'
 
 const auth = useAuthStore()
 
@@ -53,7 +54,7 @@ const rules: FormRules = {
       validator: (_rule, value: string, callback) => {
         if (editingId.value) return callback()
         if (!value) return callback(new Error('请设置初始密码'))
-        if (value.length < 6) return callback(new Error('密码至少 6 位'))
+        if (!PASSWORD_PATTERN.test(value)) return callback(new Error(PASSWORD_RULE_MESSAGE))
         callback()
       },
       trigger: 'blur',
@@ -170,8 +171,8 @@ function openPassword(user: UserView) {
 
 async function submitPassword() {
   if (!passwordTarget.value) return
-  if (newPassword.value.length < 6) {
-    ElMessage.warning('密码至少 6 位')
+  if (!PASSWORD_PATTERN.test(newPassword.value)) {
+    ElMessage.warning(PASSWORD_RULE_MESSAGE)
     return
   }
   passwordSaving.value = true
@@ -374,7 +375,12 @@ onMounted(async () => {
           />
         </el-form-item>
         <el-form-item v-if="!editingId" label="初始密码" prop="password">
-          <el-input v-model="form.password" type="password" show-password placeholder="至少 6 位" />
+          <el-input
+            v-model="form.password"
+            type="password"
+            show-password
+            placeholder="8-72 位，含大小写字母和数字"
+          />
         </el-form-item>
         <div class="form-grid">
           <el-form-item label="昵称">
@@ -423,7 +429,7 @@ onMounted(async () => {
         v-model="newPassword"
         type="password"
         show-password
-        placeholder="至少 6 位"
+        placeholder="8-72 位，含大小写字母和数字"
         @keyup.enter="submitPassword"
       />
       <template #footer>
