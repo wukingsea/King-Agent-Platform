@@ -19,6 +19,7 @@
 - 身份认证：本地账号支持 BCrypt 密码与 TOTP 二次验证（含恢复码）；可接入 OIDC 单点登录，按角色声明把用户映射到对应空间的 `OWNER / ADMIN / EDITOR / VIEWER / AUDITOR` 角色。
 - SKILL 技能：以锁定的 `SKILL.md` 为核心，支持目录树与参考文件；技能规范注入系统提示词，模型可按需调用 `skill_read_file` 读取其他文件。
 - 会话管理：管理端查看全量会话与消息、来源筛选、关键字搜索、重命名；公开对话按浏览器访客隔离会话。
+- 界面主题：管理后台支持浅色、深色与跟随系统三种模式，并在浏览器本地记住选择。
 - 合规与审计：按空间配置内容审核、PII 脱敏、留存策略与法律保留；支持数据导出、访问复核与审计日志检索，敏感操作全程留痕。
 - 用量与成本：每次对话按实际模型记录输入/输出 Token 与估算成本，形成只追加的空间用量账本；空间可设置月度 Token 配额，用尽后对话返回 429。
 - 公开对话页：发布后的智能体可通过 `/#/chat/{publicId}` 免登录访问，使用服务端签名的访客 Cookie、分钟级限流与空间并发配额。
@@ -85,24 +86,35 @@ King-AI-Platform/
 │       │   ├── config/        # 配置、运行时装配、演示引导
 │       │   ├── finops/        # 用量账本、价格表、月度 Token 配额
 │       │   ├── knowledge/     # 知识库、分片、向量存储
+│       │   ├── license/       # 离线许可证与容量校验
 │       │   ├── llm/           # OpenAI 兼容客户端与 Mock
 │       │   ├── mcp/           # MCP 客户端与服务管理
 │       │   ├── model/         # 供应商与模型
+│       │   ├── observability/ # 对话、检索、MCP 指标与 Trace
 │       │   ├── skill/         # 技能与文件树
+│       │   ├── sso/           # OIDC 登录与角色映射
 │       │   └── system/        # 用户与空间
 │       └── resources/
 │           ├── application.yml
 │           ├── application-local.yml
 │           ├── application-prod.yml
 │           └── db/migration/{h2,mysql}
-└── king-ai-ui/                # Vue 3 前端
-    ├── Dockerfile
-    ├── nginx.conf
-    └── src/
-        ├── api/
-        ├── components/
-        ├── pages/
-        └── stores/
+├── king-ai-ui/                # Vue 3 前端
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   └── src/
+│       ├── api/
+│       ├── components/
+│       ├── pages/
+│       ├── router/
+│       ├── stores/
+│       ├── styles/
+│       └── utils/
+├── mcp-test-server/           # Python Streamable HTTP MCP 测试服务
+├── mcp-spring-server/         # Spring Boot Streamable HTTP MCP 测试服务
+├── loadtest/                  # SSE 与 RAG 压测脚本、基线工具
+├── deploy/                    # Compose overlay、Helm、备份与 air-gap 工具
+└── docs/                      # 架构、部署与运行手册
 ```
 
 ## 本地快速开始
@@ -114,7 +126,7 @@ King-AI-Platform/
 ```bash
 mvn -q -pl king-ai-api -am package -DskipTests
 cd king-ai-api
-java -jar target/king-ai-api.jar
+java -jar target/king-ai-api.jar --spring.profiles.active=local
 ```
 
 本地 profile 默认使用：
@@ -226,7 +238,9 @@ docker compose down -v       # 停止并删除全部数据卷（不可恢复）
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `KING_AI_SECRET` | 无（Compose 必填） | API Key 加密与签名密钥，至少 32 位随机字符 |
+| `KING_AI_SECRET` | 无（Compose 必填） | 会话与访客 Cookie 签名密钥，至少 32 位随机字符 |
+| `KING_AI_ENCRYPTION_KEY` | 无（Compose 必填） | API Key、MCP 凭据等静态数据的 AES-GCM 加密密钥；须独立于 `KING_AI_SECRET` |
+| `KING_AI_PREVIOUS_ENCRYPTION_KEYS` | 空 | 密钥轮换期间用于解密旧数据的逗号分隔历史密钥 |
 | `MYSQL_HOST` / `MYSQL_PORT` | `mysql` / `3306` | MySQL 地址 |
 | `MYSQL_DATABASE` | `king_ai` | 数据库名 |
 | `MYSQL_USER` / `MYSQL_PASSWORD` | `king` / `king_ai_password` | 业务数据库账号 |
