@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
   Box,
   ChatDotRound,
   Collection,
@@ -40,6 +42,7 @@ const route = useRoute()
 const router = useRouter()
 
 const mobileOpen = ref(false)
+const sidebarCollapsed = ref(false)
 const online = ref(true)
 const pwdVisible = ref(false)
 const pwdLoading = ref(false)
@@ -219,9 +222,22 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="shell">
-    <aside class="sidebar" :class="{ open: mobileOpen }">
+    <aside
+      class="sidebar"
+      :class="{ open: mobileOpen, collapsed: sidebarCollapsed }"
+    >
       <div class="brand-row">
-        <BrandLogo :size="36" />
+        <BrandLogo :size="36" :compact="sidebarCollapsed" />
+        <button
+          class="sidebar-toggle"
+          type="button"
+          :aria-label="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+          :aria-expanded="!sidebarCollapsed"
+          :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+          @click="sidebarCollapsed = !sidebarCollapsed"
+        >
+          <el-icon><component :is="sidebarCollapsed ? ArrowRight : ArrowLeft" /></el-icon>
+        </button>
       </div>
 
       <div class="space-switcher">
@@ -251,6 +267,7 @@ onBeforeUnmount(() => {
             :to="{ name: item.name }"
             class="nav-item"
             active-class="active"
+            :title="sidebarCollapsed ? item.label : undefined"
           >
             <el-icon class="nav-icon"><component :is="item.icon" /></el-icon>
             <span>{{ item.label }}</span>
@@ -300,7 +317,7 @@ onBeforeUnmount(() => {
 
     <div v-if="mobileOpen" class="sidebar-mask" @click="mobileOpen = false"></div>
 
-    <div class="main">
+    <div class="main" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
       <header class="topbar">
         <button class="menu-btn" type="button" aria-label="打开菜单" @click="mobileOpen = true">
           <el-icon><Menu /></el-icon>
@@ -414,13 +431,36 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   width: 248px;
+  transition: width 0.24s ease, transform 0.24s ease;
   background: rgba(7, 11, 22, 0.86);
   border-right: 1px solid var(--king-line);
   backdrop-filter: blur(22px);
 }
 
 .brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 22px 20px 16px;
+}
+
+.sidebar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 1px solid var(--king-line);
+  border-radius: 8px;
+  background: var(--k-fill);
+  color: var(--king-text-soft);
+  cursor: pointer;
+}
+
+.sidebar-toggle:hover {
+  background: var(--k-hover);
+  color: var(--king-text);
 }
 
 .space-switcher {
@@ -612,9 +652,66 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   margin-left: 248px;
+  transition: margin-left 0.24s ease;
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+}
+
+@media (min-width: 961px) {
+  .sidebar.collapsed {
+    width: 72px;
+  }
+
+  .sidebar.collapsed .brand-row {
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 0;
+  }
+
+  .sidebar.collapsed .space-switcher,
+  .sidebar.collapsed .nav-group-label,
+  .sidebar.collapsed .nav-item > span:not(.nav-glow),
+  .sidebar.collapsed .foot-status > span:not(.status-dot) {
+    display: none;
+  }
+
+  .sidebar.collapsed .nav {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .sidebar.collapsed .nav-item {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar.collapsed .nav-group + .nav-group {
+    margin-top: 10px;
+  }
+
+  .sidebar.collapsed .sidebar-foot {
+    padding: 12px 10px;
+  }
+
+  .sidebar.collapsed .foot-status {
+    justify-content: center;
+    padding: 0 0 10px;
+  }
+
+  .sidebar.collapsed .user-card {
+    justify-content: center;
+    padding: 8px 0;
+  }
+
+  .sidebar.collapsed .user-meta,
+  .sidebar.collapsed .chevron {
+    display: none;
+  }
+
+  .main.sidebar-collapsed {
+    margin-left: 72px;
+  }
 }
 
 .topbar {
@@ -809,6 +906,10 @@ html.light .sidebar-mask {
 
   .menu-btn {
     display: inline-flex;
+  }
+
+  .sidebar-toggle {
+    display: none;
   }
 
   .sidebar-mask {
