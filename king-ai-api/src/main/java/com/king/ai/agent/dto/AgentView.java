@@ -25,6 +25,7 @@ public record AgentView(
         List<Long> knowledgeBaseIds,
         List<Long> mcpIds,
         List<Long> skillIds,
+        Integer historyWindow,
         LocalDateTime createdAt,
         LocalDateTime updatedAt
 ) {

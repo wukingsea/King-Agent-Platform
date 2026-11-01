@@ -19,6 +19,7 @@ public record AgentSnapshot(
         Long fallbackModelId,
         List<Long> knowledgeBaseIds,
         List<Long> mcpIds,
-        List<Long> skillIds
+        List<Long> skillIds,
+        Integer historyWindow
 ) {
 }

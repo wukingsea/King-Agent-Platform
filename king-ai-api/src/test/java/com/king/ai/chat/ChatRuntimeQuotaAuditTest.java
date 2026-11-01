@@ -50,7 +50,7 @@ class ChatRuntimeQuotaAuditTest {
         long userId = 7L;
         ChatActor actor = ChatActor.user(userId, null, "alice", spaceId, "OWNER", true);
         AgentRuntime agent = new AgentRuntime(11L, spaceId, null, "agent", null, 9L,
-                null, null, null, 0, null, null, null, null);
+                null, null, null, 0, null, null, null, null, null);
 
         when(complianceSettingsService.effective(spaceId)).thenReturn(mock(ComplianceSettings.class));
         when(chatInputCompliance.prepare(eq("hi"), any(), any()))

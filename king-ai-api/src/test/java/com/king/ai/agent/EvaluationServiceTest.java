@@ -50,7 +50,7 @@ class EvaluationServiceTest {
         agent.setSpaceId(2L);
         AgentSnapshot snapshot = new AgentSnapshot("agent", "", 5L, "prompt",
                 new BigDecimal("0.7"), 256, null, "WRITE", null,
-                List.of(), List.of(), List.of());
+                List.of(), List.of(), List.of(), null);
 
         EvaluationService.Outcome outcome = service.evaluate(agent, snapshot,
                 List.of(evalCase("退款", "退款,客服", 1), evalCase("发票", "发票", 3)));
@@ -84,6 +84,6 @@ class EvaluationServiceTest {
 
     private static AgentSnapshot snapshot() {
         return new AgentSnapshot("agent", "", 5L, "prompt", new BigDecimal("0.7"), 256,
-                null, "WRITE", null, List.of(), List.of(), List.of());
+                null, "WRITE", null, List.of(), List.of(), List.of(), null);
     }
 }

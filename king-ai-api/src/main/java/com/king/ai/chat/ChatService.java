@@ -268,7 +268,23 @@ public class ChatService {
     }
 
     public List<LlmMessage> history(Long sessionId) {
-        int limit = Math.max(1, properties.getChat().getMaxHistoryMessages());
+        return history(sessionId, null);
+    }
+
+    /**
+     * Loads conversation history for one chat turn.
+     *
+     * @param sessionId session to read
+     * @param window    per-agent cap on recent messages; {@code null} uses the global default,
+     *                  {@code 0} disables history for this turn, {@code >0} caps at the most recent N
+     *                  (still bounded above by the global default)
+     */
+    public List<LlmMessage> history(Long sessionId, Integer window) {
+        int globalLimit = Math.max(1, properties.getChat().getMaxHistoryMessages());
+        if (window != null && window <= 0) {
+            return List.of();
+        }
+        int limit = window == null ? globalLimit : Math.min(window, globalLimit);
         // Bounded query: long sessions must not load the whole transcript into memory on every turn.
         List<ChatMessage> messages = messageMapper.selectList(new LambdaQueryWrapper<ChatMessage>()
                 .eq(ChatMessage::getSessionId, sessionId)

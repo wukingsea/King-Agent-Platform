@@ -377,6 +377,7 @@ public class AgentService {
                 agent.getPublishedVersion(), parseTools(agent.getAllowedTools()),
                 normalizeApprovalMode(agent.getToolApprovalMode()), agent.getFallbackModelId(),
                 bindings.knowledgeBaseIds(), bindings.mcpIds(), bindings.skillIds(),
+                agent.getHistoryWindow(),
                 agent.getCreatedAt(), agent.getUpdatedAt());
     }
 
@@ -391,6 +392,7 @@ public class AgentService {
         agent.setAllowedTools(writeTools(request.allowedTools()));
         agent.setToolApprovalMode(normalizeApprovalMode(request.toolApprovalMode()));
         agent.setFallbackModelId(request.fallbackModelId());
+        agent.setHistoryWindow(request.historyWindow());
     }
 
     private void applySnapshot(Agent agent, AgentSnapshot snapshot) {
@@ -403,6 +405,7 @@ public class AgentService {
         agent.setAllowedTools(snapshot.allowedTools());
         agent.setToolApprovalMode(normalizeApprovalMode(snapshot.toolApprovalMode()));
         agent.setFallbackModelId(snapshot.fallbackModelId());
+        agent.setHistoryWindow(snapshot.historyWindow());
     }
 
     private void validateModels(Long spaceId, Long modelId, Long fallbackModelId) {
@@ -421,7 +424,7 @@ public class AgentService {
                 agent.getSystemPrompt(), agent.getTemperature(), agent.getMaxTokens(),
                 agent.getAllowedTools(), normalizeApprovalMode(agent.getToolApprovalMode()),
                 agent.getFallbackModelId(), bindings.knowledgeBaseIds(), bindings.mcpIds(),
-                bindings.skillIds());
+                bindings.skillIds(), agent.getHistoryWindow());
     }
 
     public AgentVersion createVersion(Agent agent, AgentSnapshot snapshot, ReleaseState state,

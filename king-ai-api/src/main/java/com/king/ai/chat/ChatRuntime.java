@@ -299,7 +299,7 @@ public class ChatRuntime {
         Tracer.SpanInScope spanScope = tracing.openScope(chatSpan);
         try {
             session = chatService.ensureSession(actor, agent.agentId(), sourceType, sessionId, message);
-            List<LlmMessage> history = chatService.history(session.getId());
+            List<LlmMessage> history = chatService.history(session.getId(), agent.historyWindow());
             chatService.saveUserMessage(session, message);
             userSaved = true;
             assistant = chatService.saveAssistantPlaceholder(session.getId(), resolved.model().getModel());

@@ -23,14 +23,15 @@ public record AgentRuntime(
         String allowedTools,
         String toolApprovalMode,
         Long fallbackModelId,
-        AgentBindings bindings
+        AgentBindings bindings,
+        Integer historyWindow
 ) {
 
     public static AgentRuntime live(Agent agent, AgentBindings bindings) {
         return new AgentRuntime(agent.getId(), agent.getSpaceId(), agent.getPublicId(), agent.getName(),
                 agent.getIntro(), agent.getModelId(), agent.getSystemPrompt(), agent.getTemperature(),
                 agent.getMaxTokens(), agent.getStatus(), agent.getAllowedTools(), agent.getToolApprovalMode(),
-                agent.getFallbackModelId(), bindings);
+                agent.getFallbackModelId(), bindings, agent.getHistoryWindow());
     }
 
     public static AgentRuntime published(Agent agent, AgentSnapshot snapshot) {
@@ -39,7 +40,8 @@ public record AgentRuntime(
                 snapshot.maxTokens(), 0, snapshot.allowedTools(), snapshot.toolApprovalMode(),
                 snapshot.fallbackModelId(),
                 new AgentBindings(nullSafe(snapshot.knowledgeBaseIds()), nullSafe(snapshot.mcpIds()),
-                        nullSafe(snapshot.skillIds())));
+                        nullSafe(snapshot.skillIds())),
+                snapshot.historyWindow());
     }
 
     private static List<Long> nullSafe(List<Long> values) {

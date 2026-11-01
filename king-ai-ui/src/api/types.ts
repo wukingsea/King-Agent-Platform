@@ -131,6 +131,7 @@ export interface AgentView {
   allowedTools?: string[]
   toolApprovalMode?: string
   fallbackModelId?: number | null
+  historyWindow?: number | null
   knowledgeBaseIds: number[]
   mcpIds: number[]
   skillIds: number[]
@@ -202,6 +203,7 @@ export interface AgentSaveRequest {
   allowedTools?: string[]
   toolApprovalMode?: string
   fallbackModelId?: number | null
+  historyWindow?: number | null
   knowledgeBaseIds?: number[]
   mcpIds?: number[]
   skillIds?: number[]

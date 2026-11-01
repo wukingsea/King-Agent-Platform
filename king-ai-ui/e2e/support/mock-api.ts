@@ -72,6 +72,7 @@ const agent = {
   knowledgeBaseIds: [],
   mcpIds: [],
   skillIds: [],
+  historyWindow: null,
   createdAt: CREATED_AT,
 }
 

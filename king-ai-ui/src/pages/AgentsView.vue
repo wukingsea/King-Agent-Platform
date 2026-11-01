@@ -42,6 +42,9 @@ import type {
 import { copyText, fromNow } from '@/utils/format'
 
 const CONTEXT_LIMIT = 50000
+// Mirrors KingAiProperties.Chat.maxHistoryMessages (server default, currently 20).
+// If the backend default changes, update this constant in lockstep.
+const CHAT_MAX_HISTORY = 20
 
 const auth = useAuthStore()
 const route = useRoute()
@@ -111,6 +114,7 @@ interface AgentForm {
   allowedTools: string[]
   toolApprovalMode: string
   fallbackModelId: number | null
+  historyWindow: number | null
   knowledgeBaseIds: number[]
   mcpIds: number[]
   skillIds: number[]
@@ -127,6 +131,7 @@ const form = reactive<AgentForm>({
   allowedTools: [],
   toolApprovalMode: 'WRITE',
   fallbackModelId: null,
+  historyWindow: null,
   knowledgeBaseIds: [],
   mcpIds: [],
   skillIds: [],
@@ -156,6 +161,7 @@ function resetForm() {
     allowedTools: [],
     toolApprovalMode: 'WRITE',
     fallbackModelId: null,
+    historyWindow: null,
     knowledgeBaseIds: [],
     mcpIds: [],
     skillIds: [],
@@ -242,6 +248,7 @@ function applyAgentToForm(agent: AgentView) {
     allowedTools: [...(agent.allowedTools || [])],
     toolApprovalMode: agent.toolApprovalMode || 'WRITE',
     fallbackModelId: agent.fallbackModelId ?? null,
+    historyWindow: agent.historyWindow ?? null,
     knowledgeBaseIds: [...(agent.knowledgeBaseIds || [])],
     mcpIds: [...(agent.mcpIds || [])],
     skillIds: [...(agent.skillIds || [])],
@@ -556,6 +563,7 @@ async function submit() {
     allowedTools: form.allowedTools,
     toolApprovalMode: form.toolApprovalMode,
     fallbackModelId: form.fallbackModelId,
+    historyWindow: form.historyWindow,
     knowledgeBaseIds: form.knowledgeBaseIds,
     mcpIds: form.mcpIds,
     skillIds: form.skillIds,
@@ -914,6 +922,20 @@ onMounted(async () => {
             </el-form-item>
             <el-form-item label="最大输出 Tokens">
               <el-input-number v-model="form.maxTokens" :min="1" :max="32768" :step="256" controls-position="right" />
+            </el-form-item>
+            <el-form-item label="历史上下文窗口" class="grow">
+              <el-input-number
+                v-model="form.historyWindow"
+                :min="0"
+                :max="500"
+                :step="1"
+                :value-on-clear="null"
+                controls-position="right"
+              />
+              <div class="field-hint">
+                携带给模型的最近对话条数。留空沿用平台默认值（{{ CHAT_MAX_HISTORY }} 条）；
+                设为 0 表示本轮不携带历史，仅看当前问题；该值不会超过平台上限。
+              </div>
             </el-form-item>
           </div>
         </div>

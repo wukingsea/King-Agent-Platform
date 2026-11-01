@@ -51,6 +51,10 @@ public record AgentSaveRequest(
         @Pattern(regexp = "NONE|WRITE|ALL", message = "工具审批模式必须为 NONE、WRITE 或 ALL")
         String toolApprovalMode,
 
-        Long fallbackModelId
+        Long fallbackModelId,
+
+        @Min(value = 0, message = "历史窗口条数不能小于 0")
+        @Max(value = 500, message = "历史窗口条数不能超过 500")
+        Integer historyWindow
 ) {
 }

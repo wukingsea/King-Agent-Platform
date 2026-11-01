@@ -29,6 +29,7 @@ public class Agent extends BaseEntity {
     private String allowedTools;
     private String toolApprovalMode;
     private Long fallbackModelId;
+    private Integer historyWindow;
 
     @Version
     private Integer version;
