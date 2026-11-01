@@ -34,7 +34,7 @@ defineProps<{
   font-weight: 650;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: #9b83ff;
+  color: var(--k-violet);
 }
 
 .actions {

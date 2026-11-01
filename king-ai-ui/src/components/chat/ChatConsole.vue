@@ -1475,4 +1475,8 @@ html.light .approval-args {
   background: rgba(15, 23, 42, 0.05);
   color: var(--king-text-soft);
 }
+
+html.light .rail-new:hover {
+  color: var(--k-violet);
+}
 </style>

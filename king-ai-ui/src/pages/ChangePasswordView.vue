@@ -199,7 +199,7 @@ async function submit() {
 .eyebrow {
   font-size: 10px;
   letter-spacing: 0.2em;
-  color: #8b7cf6;
+  color: var(--k-violet);
   text-transform: uppercase;
 }
 

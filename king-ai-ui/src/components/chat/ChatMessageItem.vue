@@ -182,7 +182,9 @@ function toolSummary(tool: ToolTraceItem): string {
   display: flex;
   gap: 13px;
   width: 100%;
-  animation: msg-in 0.24s ease both;
+  /* backwards：fill both/forwards 会在动画结束后残留单位矩阵 transform，
+     使 .message-row 成为 position:fixed 后代的包含块 */
+  animation: msg-in 0.24s ease backwards;
 }
 
 @keyframes msg-in {

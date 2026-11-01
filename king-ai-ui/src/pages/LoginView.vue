@@ -369,7 +369,7 @@ function fillDemo() {
   position: relative;
   z-index: 1;
   max-width: 660px;
-  animation: rise 0.6s ease both;
+  animation: rise 0.6s ease backwards;
 }
 
 @keyframes rise {
@@ -498,7 +498,7 @@ function fillDemo() {
   flex-direction: column;
   align-items: stretch;
   gap: 18px;
-  animation: rise 0.6s 0.1s ease both;
+  animation: rise 0.6s 0.1s ease backwards;
 }
 
 .auth-card {
@@ -535,7 +535,7 @@ function fillDemo() {
   font-family: var(--king-mono);
   font-size: 9.5px;
   letter-spacing: 0.24em;
-  color: #8f7dff;
+  color: var(--k-violet);
 }
 
 .card-head h2 {

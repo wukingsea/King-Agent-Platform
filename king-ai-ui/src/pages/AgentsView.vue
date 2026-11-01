@@ -1532,7 +1532,7 @@ onMounted(async () => {
 }
 
 .version-comment {
-  color: #c9a2ff;
+  color: var(--k-violet);
 }
 
 .version-note {

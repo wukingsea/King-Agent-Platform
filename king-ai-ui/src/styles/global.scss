@@ -65,7 +65,12 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  animation: page-in 0.32s ease both;
+  /* fill-mode 不能用 both/forwards：动画结束后会永久保留结束帧的 transform——
+     即使结束帧写 none，Chromium 也会把插值结果表示成单位矩阵 matrix(1,0,0,1,0,0)
+     而非 none，使 .page 持续成为 position:fixed 后代（el-drawer / el-dialog 遮罩）
+     的包含块，弹层被裁剪到内容区而非铺满视口。backwards 只作用于延迟前的起始
+     状态，动画结束后不残留任何样式。 */
+  animation: page-in 0.32s ease backwards;
 }
 
 @keyframes page-in {
@@ -75,7 +80,6 @@ textarea {
   }
   to {
     opacity: 1;
-    transform: translateY(0);
   }
 }
 
@@ -526,8 +530,17 @@ html.light .el-button {
   --el-button-active-bg-color: #ecedf5;
 }
 
+/* html.light .el-button（特异度 0,1,1）会把 .el-button--primary（0,1,0）的
+   --el-button-bg-color 覆盖为白色，导致浅色下主按钮白底白字，必须在此重新声明 */
 html.light .el-button--primary {
+  --el-button-bg-color: var(--king-primary);
+  --el-button-border-color: transparent;
+  --el-button-text-color: #fff;
   --el-button-hover-bg-color: #5b35f5;
+  --el-button-hover-border-color: transparent;
+  --el-button-hover-text-color: #fff;
+  --el-button-active-bg-color: var(--king-primary-strong);
+  --el-button-active-text-color: #fff;
   box-shadow: 0 8px 22px rgba(124, 92, 255, 0.24);
 }
 

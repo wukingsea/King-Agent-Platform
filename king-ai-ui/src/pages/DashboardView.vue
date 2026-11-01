@@ -560,7 +560,7 @@ onMounted(load)
 }
 
 .section-title .el-icon {
-  color: #9b83ff;
+  color: var(--k-violet);
 }
 
 .more-link {

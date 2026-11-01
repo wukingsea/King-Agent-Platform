@@ -1075,7 +1075,7 @@ onMounted(async () => {
 
 .tree-icon {
   font-size: 15px;
-  color: #9d8cff;
+  color: var(--k-violet);
   flex: 0 0 auto;
 }
 
@@ -1092,7 +1092,7 @@ onMounted(async () => {
 .lock-tag {
   margin-left: auto;
   font-size: 10px;
-  color: #fbbf24;
+  color: var(--k-amber);
   border: 1px solid rgba(251, 191, 36, 0.3);
   border-radius: 999px;
   padding: 1px 6px;
@@ -1162,7 +1162,7 @@ onMounted(async () => {
 
 .dirty-dot {
   font-size: 11px;
-  color: #fbbf24;
+  color: var(--k-amber);
   border: 1px solid rgba(251, 191, 36, 0.32);
   background: rgba(251, 191, 36, 0.1);
   border-radius: 999px;

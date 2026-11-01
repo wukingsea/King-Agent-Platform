@@ -182,7 +182,7 @@ async function logoutAll() {
 }
 
 .session-icon.current {
-  color: #a78bfa;
+  color: var(--k-violet);
   background: rgba(124, 92, 255, 0.12);
   border-color: rgba(124, 92, 255, 0.3);
 }
