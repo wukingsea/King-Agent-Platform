@@ -57,9 +57,9 @@ logging:
   level:
     com.king.ai: INFO
     com.king.ai.chat: INFO
-  structured:
-    format:
-      console: ${LOG_STRUCTURED_FORMAT:ecs}
+#  structured:
+#    format:
+#      console: ${LOG_STRUCTURED_FORMAT:ecs}
 
 management:
   endpoints:

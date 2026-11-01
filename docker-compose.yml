@@ -121,6 +121,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    ports:
+      - "19530:19530"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
