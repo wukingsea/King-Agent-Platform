@@ -117,7 +117,7 @@ class MySqlMigrationTest {
 
     @Test
     void appliesAndValidatesMysqlMigrations() throws SQLException {
-        assertThat(migrateResult.migrationsExecuted).isEqualTo(15);
+        assertThat(migrateResult.migrationsExecuted).isEqualTo(17);
         Flyway.configure()
                 .dataSource(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword())
                 .locations("classpath:db/migration/mysql")
@@ -130,6 +130,8 @@ class MySqlMigrationTest {
             assertThat(tableExists(connection, "king_ai_audit_log")).isTrue();
             assertThat(tableExists(connection, "king_ai_usage_ledger")).isTrue();
             assertThat(tableExists(connection, "king_ai_agent_eval_case")).isTrue();
+            assertThat(columnExists(connection, "king_ai_agent_eval_case", "created_by")).isTrue();
+            assertThat(columnExists(connection, "king_ai_agent_eval_case", "updated_by")).isTrue();
             assertThat(tableExists(connection, "king_ai_user_identity")).isTrue();
             assertThat(columnExists(connection, "king_ai_space", "deleted_at")).isTrue();
             assertThat(columnExists(connection, "king_ai_agent", "deleted_at")).isTrue();
