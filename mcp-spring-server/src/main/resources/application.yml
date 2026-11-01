@@ -1,0 +1,8 @@
+server:
+  port: ${MCP_TEST_PORT:9093}
+spring:
+  application:
+    name: mcp-spring-server
+logging:
+  level:
+    root: INFO
