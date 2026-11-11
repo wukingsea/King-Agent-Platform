@@ -133,7 +133,7 @@ jobs:
 
     - name: Review dependency changes
       if: github.event_name == 'pull_request'
-      uses: actions/dependency-review-action@v4
+      uses: actions/dependency-review-action@v5
 
     - name: Trivy scan
       uses: aquasecurity/trivy-action@0.28.0
