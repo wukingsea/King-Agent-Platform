@@ -29,6 +29,7 @@ export interface ApiMockOptions {
 
 export interface ApiMock {
   stopCalls: string[]
+  approveCalls: string[]
   loginCalls: number
 }
 
@@ -141,7 +142,7 @@ export async function installApiMocks(
   page: Page,
   options: ApiMockOptions = {},
 ): Promise<ApiMock> {
-  const mock: ApiMock = { stopCalls: [], loginCalls: 0 }
+  const mock: ApiMock = { stopCalls: [], approveCalls: [], loginCalls: 0 }
   let authenticated = options.authenticated ?? false
   const user = options.user ?? adminUser
   const spaces = options.spaces ?? defaultSpaces
@@ -194,6 +195,10 @@ export async function installApiMocks(
       if (path === '/compliance/exports') return ok(route, [])
       if (path.startsWith('/chat/requests/') && path.endsWith('/stop')) {
         mock.stopCalls.push(path)
+        return ok(route, null)
+      }
+      if (path.includes('/tool-approvals/')) {
+        mock.approveCalls.push(`${method} ${path} ${request.postData() || ''}`)
         return ok(route, null)
       }
       return ok(route, null)
