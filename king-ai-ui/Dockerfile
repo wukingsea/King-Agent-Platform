@@ -7,7 +7,7 @@ RUN npm ci
 COPY king-ai-ui/ ./
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 
 # envsubst template: the stock unprivileged entrypoint renders this into
 # /etc/nginx/conf.d/default.conf at container start. Only env-DEFINED
