@@ -581,7 +581,8 @@ Helm 只执行镜像内 Flyway；迁移文件必须随 API 镜像发布。
 - 全链路启用 TLS：浏览器到 Nginx、Nginx 到 API、API 到 MySQL/Redis/Milvus。
 - 保持 `KING_AI_BLOCK_PRIVATE_NETWORKS=true`；确需访问内部模型或 MCP 服务时，通过 `KING_AI_ALLOWED_OUTBOUND_HOSTS` 精确放行。
 - 保持 `KING_AI_COOKIE_SECURE=true`，并配置准确的 `KING_AI_ALLOWED_ORIGINS`。
-- 仅暴露 UI 入口；MySQL、Redis、Milvus、MinIO、etcd 不映射公网端口。
+- 设置 `KING_AI_MANAGEMENT_TOKEN` 保护 `/actuator` 下除 health 外的端点（prometheus、info 等）；Prometheus 抓取时通过 `X-Actuator-Token` 或 Bearer 凭证携带该令牌（见 `deploy/observability/prometheus/prometheus.yml` 注释）。
+- 仅暴露 UI 入口；MySQL、Redis、Milvus、MinIO、etcd 不映射公网端口。Milvus 端口默认绑定 `127.0.0.1`（`MILVUS_BIND` 可覆盖），仅在确有外部工具需要时放开并启用 `MILVUS_TOKEN`。
 - 首次登录后立即修改管理员密码；为成员分配最小必要空间角色。
 - 定期检查审计日志、登录失败指标与公开对话限流命中情况。
 - 生产关闭 `KING_AI_DEMO_ENABLED`，不要保留演示智能体、Mock 供应商或演示 MCP。

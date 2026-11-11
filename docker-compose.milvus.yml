@@ -57,7 +57,7 @@ services:
     restart: unless-stopped
     command: ["milvus", "run", "standalone"]
     ports:
-      - "19530:19530"
+      - "${MILVUS_BIND:-127.0.0.1}:19530:19530"
     security_opt:
       - no-new-privileges:true
       - seccomp:unconfined

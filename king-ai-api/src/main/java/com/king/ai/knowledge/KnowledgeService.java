@@ -324,6 +324,9 @@ public class KnowledgeService {
         } catch (IOException ex) {
             throw BizException.badRequest("文件读取失败");
         }
+        if (!matchesDeclaredType(lower, bytes)) {
+            throw BizException.badRequest("文件内容与扩展名不符，请上传有效的 TXT、Markdown、PDF 或图片文件");
+        }
         String content;
         String sourceType;
         boolean ocrApplicable = false;
@@ -816,6 +819,42 @@ public class KnowledgeService {
     }
 
     private record PdfText(String text, int pages) {
+    }
+
+    /**
+     * Verifies the payload actually matches the declared extension before it reaches the
+     * parsers (PDFBox, OCR). Text formats are checked for obvious binary content instead.
+     */
+    private static boolean matchesDeclaredType(String lowerName, byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return false;
+        }
+        if (lowerName.endsWith(".pdf")) {
+            // The PDF spec allows the header anywhere in the first 1024 bytes.
+            int limit = Math.min(bytes.length, 1024);
+            for (int i = 0; i + 4 <= limit; i++) {
+                if (bytes[i] == '%' && bytes[i + 1] == 'P' && bytes[i + 2] == 'D' && bytes[i + 3] == 'F') {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (lowerName.endsWith(".png")) {
+            return bytes.length >= 8
+                    && (bytes[0] & 0xff) == 0x89 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G'
+                    && bytes[4] == 0x0d && bytes[5] == 0x0a && bytes[6] == 0x1a && bytes[7] == 0x0a;
+        }
+        if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) {
+            return bytes.length >= 3
+                    && (bytes[0] & 0xff) == 0xff && (bytes[1] & 0xff) == 0xd8 && (bytes[2] & 0xff) == 0xff;
+        }
+        int probe = Math.min(bytes.length, 8192);
+        for (int i = 0; i < probe; i++) {
+            if (bytes[i] == 0) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private KnowledgeDocView view(KnowledgeDoc doc, int charCount) {

@@ -68,6 +68,9 @@ public class StartupSecurityChecks implements InitializingBean {
         if (properties.getDemo().isEnabled()) {
             log.warn("生产环境启用了演示模块（king-ai.demo.enabled=true），请确认这是预期行为");
         }
+        if (properties.getManagement().getToken() == null || properties.getManagement().getToken().isBlank()) {
+            log.warn("生产环境未配置 KING_AI_MANAGEMENT_TOKEN，/actuator 下除 health 外的端点（prometheus、info 等）将无需认证即可访问");
+        }
         warnWeakTransportSecurity();
     }
 

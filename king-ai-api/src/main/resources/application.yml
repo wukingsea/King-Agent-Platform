@@ -168,6 +168,10 @@ king-ai:
     cookie-secure: ${KING_AI_COOKIE_SECURE:false}
     session-cookie-name: ${KING_AI_SESSION_COOKIE_NAME:king_session}
     allowed-origins: ${KING_AI_ALLOWED_ORIGINS:}
+  management:
+    # Bearer token for non-health actuator endpoints (prometheus, info, ...).
+    # Empty leaves them open; set KING_AI_MANAGEMENT_TOKEN in production.
+    token: ${KING_AI_MANAGEMENT_TOKEN:}
   admin:
     username: ${KING_AI_ADMIN_USERNAME:}
     password: ${KING_AI_ADMIN_PASSWORD:}

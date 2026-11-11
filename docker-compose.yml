@@ -122,7 +122,7 @@ services:
       minio:
         condition: service_healthy
     ports:
-      - "19530:19530"
+      - "${MILVUS_BIND:-127.0.0.1}:19530:19530"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
       interval: 30s
@@ -179,6 +179,9 @@ services:
       KING_AI_TRUST_FORWARDED_HEADERS: ${KING_AI_TRUST_FORWARDED_HEADERS:-true}
       KING_AI_COOKIE_SECURE: ${KING_AI_COOKIE_SECURE:-true}
       KING_AI_ALLOWED_ORIGINS: ${KING_AI_ALLOWED_ORIGINS:-}
+      # Bearer token for non-health actuator endpoints (prometheus, info).
+      # Empty leaves them open; set it and pass X-Actuator-Token when scraping.
+      KING_AI_MANAGEMENT_TOKEN: ${KING_AI_MANAGEMENT_TOKEN:-}
       KING_AI_BLOCK_PRIVATE_NETWORKS: ${KING_AI_BLOCK_PRIVATE_NETWORKS:-true}
       KING_AI_ALLOWED_OUTBOUND_HOSTS: ${KING_AI_ALLOWED_OUTBOUND_HOSTS:-}
       KING_AI_DEMO_ENABLED: ${KING_AI_DEMO_ENABLED:-false}

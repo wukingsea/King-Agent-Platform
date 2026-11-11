@@ -38,6 +38,7 @@ public class KingAiProperties {
     private Mfa mfa = new Mfa();
     private Ocr ocr = new Ocr();
     private License license = new License();
+    private Management management = new Management();
 
     @Data
     public static class Chat {
@@ -303,5 +304,14 @@ public class KingAiProperties {
         private String file = "";
         /** Base64 or PEM encoded Ed25519 public key. */
         private String publicKey = "";
+    }
+
+    @Data
+    public static class Management {
+        /**
+         * Bearer token guarding non-health actuator endpoints (prometheus, info, ...).
+         * Empty keeps the endpoints open, matching the historical behaviour.
+         */
+        private String token = "";
     }
 }

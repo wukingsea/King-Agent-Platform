@@ -1,0 +1,59 @@
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      spring:
+        patterns:
+          - "org.springframework*"
+          - "org.springdoc*"
+      persistence:
+        patterns:
+          - "com.baomidou*"
+          - "org.mybatis*"
+          - "org.flywaydb*"
+          - "com.mysql*"
+          - "com.h2database*"
+      misc-java:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "org.springframework*"
+          - "org.springdoc*"
+          - "com.baomidou*"
+          - "org.mybatis*"
+          - "org.flywaydb*"
+          - "com.mysql*"
+          - "com.h2database*"
+
+  - package-ecosystem: npm
+    directory: /king-ai-ui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: docker
+    directory: /king-ai-api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: docker
+    directory: /king-ai-ui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
