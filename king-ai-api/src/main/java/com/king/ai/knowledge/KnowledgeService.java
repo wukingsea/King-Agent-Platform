@@ -29,6 +29,7 @@ import com.king.ai.knowledge.vector.VectorHit;
 import com.king.ai.knowledge.vector.VectorRecord;
 import com.king.ai.knowledge.vector.VectorStore;
 import com.king.ai.knowledge.vector.VectorStoreException;
+import com.king.ai.knowledge.rerank.RerankClient;
 import com.king.ai.model.ModelRuntimeService;
 import com.king.ai.model.entity.SupplierModel;
 import com.king.ai.model.mapper.SupplierModelMapper;
@@ -37,6 +38,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;
@@ -70,6 +72,8 @@ public class KnowledgeService {
 
     private static final int MAX_CONTENT_CHARS = 2_000_000;
     private static final long MAX_FILE_BYTES = 20L * 1024 * 1024;
+    /** ACL 下推到向量过滤的文档数量上限，超过则退回水合后过滤。 */
+    private static final int ACL_PUSHDOWN_LIMIT = 256;
 
     private static final RowMapper<KnowledgeDocView> DOC_VIEW_MAPPER = (rs, rowNum) -> new KnowledgeDocView(
             rs.getLong("id"),
@@ -96,6 +100,7 @@ public class KnowledgeService {
     private final KnowledgeIndexQueue indexQueue;
     private final JdbcTemplate jdbcTemplate;
     private final OcrService ocrService;
+    private final ObjectProvider<RerankClient> rerankClient;
 
     public PageResult<KnowledgeBaseView> list(Long spaceId, String keyword, PageQuery query) {
         LambdaQueryWrapper<KnowledgeBase> wrapper = new LambdaQueryWrapper<KnowledgeBase>()
@@ -549,7 +554,8 @@ public class KnowledgeService {
             return List.of();
         }
         float[] vector = embeddingService.embedQuery(base, query);
-        return retrieve(base, query, limit, role, vector);
+        List<RetrievedChunk> result = retrieve(base, query, limit, role, vector);
+        return rerank(query, result);
     }
 
     /**
@@ -560,7 +566,10 @@ public class KnowledgeService {
     private List<RetrievedChunk> retrieve(KnowledgeBase base, String query, int limit, String role,
                                           float[] vector) {
         int topK = Math.max(1, Math.min(limit, 20));
-        List<VectorHit> hits = vectorStore.search(base, vector, topK);
+        // 文档级 ACL 下推：被当前角色排除的文档直接从向量候选中剔除，
+        // 避免受限文档占满 topK 后再被丢弃造成召回不足。水合后仍保留
+        // canRead 复核，作为存储层未能表达过滤时的兜底。
+        List<VectorHit> hits = vectorStore.search(base, vector, topK, aclDeniedDocIds(base, role));
         LinkedHashMap<Long, RetrievedChunk> candidates = new LinkedHashMap<>();
         if (!hits.isEmpty()) {
             List<Long> chunkIds = hits.stream().map(VectorHit::chunkId).distinct().toList();
@@ -582,13 +591,16 @@ public class KnowledgeService {
             }
         }
 
-        String lexicalTerm = lexicalTerm(query);
-        if (!lexicalTerm.isEmpty()) {
+        List<String> lexicalTerms = lexicalTerms(query);
+        if (!lexicalTerms.isEmpty()) {
             try {
-                List<KnowledgeChunk> lexical = chunkMapper.selectList(new LambdaQueryWrapper<KnowledgeChunk>()
-                        .eq(KnowledgeChunk::getKnowledgeBaseId, base.getId())
-                        .like(KnowledgeChunk::getContent, lexicalTerm)
-                        .last("LIMIT " + Math.max(topK * 2, 10)));
+                LambdaQueryWrapper<KnowledgeChunk> lexicalQuery = new LambdaQueryWrapper<KnowledgeChunk>()
+                        .eq(KnowledgeChunk::getKnowledgeBaseId, base.getId());
+                for (String term : lexicalTerms) {
+                    lexicalQuery.like(KnowledgeChunk::getContent, term);
+                }
+                lexicalQuery.last("LIMIT " + Math.max(topK * 2, 10));
+                List<KnowledgeChunk> lexical = chunkMapper.selectList(lexicalQuery);
                 Map<Long, KnowledgeDoc> docs = docMap(
                         lexical.stream().map(KnowledgeChunk::getDocId).toList());
                 Set<Long> lexicalIds = new HashSet<>();
@@ -667,6 +679,7 @@ public class KnowledgeService {
             }
         }
         chunks.sort(Comparator.comparingDouble(RetrievedChunk::score).reversed());
+        chunks = rerank(query, chunks);
 
         // Document-level deduplication: keep only the highest-scoring chunk per document
         List<RetrievedChunk> deduped = new ArrayList<>();
@@ -693,18 +706,65 @@ public class KnowledgeService {
         return selected;
     }
 
-    private static String lexicalTerm(String query) {
+    /**
+     * 取查询中最长的若干词项作为 lexical 匹配条件（AND 关系）。
+     * 过滤单字符词项可以避免 LIKE 全表泛匹配；每项截断 40 字符。
+     */
+    private static List<String> lexicalTerms(String query) {
         String value = Texts.oneLine(query, 120);
         if (Texts.isBlank(value)) {
-            return "";
+            return List.of();
         }
-        String best = "";
-        for (String part : value.split("\\s+")) {
-            if (part.length() > best.length()) {
-                best = part;
+        return java.util.Arrays.stream(value.split("\\s+"))
+                .map(String::trim)
+                .filter(term -> term.length() >= 2)
+                .sorted(Comparator.comparingInt(String::length).reversed())
+                .distinct()
+                .limit(3)
+                .map(term -> term.length() > 40 ? term.substring(0, 40) : term)
+                .toList();
+    }
+
+    /**
+     * 当前角色无权读取的文档 ID 集合，用于把 ACL 过滤下推到向量查询。
+     * 只统计设置了 allowed_roles 的文档（通常很少）；当拒绝集合超过
+     * {@link #ACL_PUSHDOWN_LIMIT} 时放弃下推，交给水合后的 canRead 复核。
+     */
+    private Set<Long> aclDeniedDocIds(KnowledgeBase base, String role) {
+        if (base.getId() == null) {
+            return Set.of();
+        }
+        List<KnowledgeDoc> restricted = docMapper.selectList(new LambdaQueryWrapper<KnowledgeDoc>()
+                .eq(KnowledgeDoc::getKnowledgeBaseId, base.getId())
+                .isNotNull(KnowledgeDoc::getAllowedRoles)
+                .ne(KnowledgeDoc::getAllowedRoles, ""));
+        Set<Long> denied = new HashSet<>();
+        for (KnowledgeDoc doc : restricted) {
+            if (!canRead(doc, role)) {
+                denied.add(doc.getId());
             }
         }
-        return best.length() > 40 ? best.substring(0, 40) : best;
+        return denied.size() > ACL_PUSHDOWN_LIMIT ? Set.of() : denied;
+    }
+
+    /**
+     * 可选重排：配置了 rerank 后端（local/http）时对候选做二次排序，
+     * 未配置或执行失败时保持融合分数顺序，不阻断检索。
+     */
+    private List<RetrievedChunk> rerank(String query, List<RetrievedChunk> chunks) {
+        if (chunks == null || chunks.size() < 2) {
+            return chunks == null ? List.of() : chunks;
+        }
+        RerankClient client = rerankClient.getIfAvailable();
+        if (client == null) {
+            return chunks;
+        }
+        try {
+            return client.rerank(query, chunks);
+        } catch (RuntimeException ex) {
+            log.debug("Rerank failed, keeping fused order: {}", ex.getMessage());
+            return chunks;
+        }
     }
 
     private Map<Long, KnowledgeDoc> docMap(List<Long> docIds) {

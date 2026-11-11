@@ -64,6 +64,25 @@ public class KingAiProperties {
         private int maxContextChars = 8000;
         private int embeddingBatchSize = 16;
         private double minScore = 0.1;
+        private Rerank rerank = new Rerank();
+    }
+
+    @Data
+    public static class Rerank {
+        /**
+         * Candidate reranking backend: {@code off} disables rerank, {@code local}
+         * (default) uses a deterministic lexical-overlap rescoring, {@code http}
+         * calls an external rerank API compatible with the Jina/Cohere style
+         * {@code POST {endpoint}} contract.
+         */
+        private String mode = "local";
+        /** Full rerank endpoint URL; required when mode=http. */
+        private String endpoint = "";
+        private String apiKey = "";
+        private String model = "rerank";
+        private int timeoutSeconds = 10;
+        /** Max candidates sent to an external reranker; 0 disables the cap. */
+        private int maxCandidates = 60;
     }
 
     @Data

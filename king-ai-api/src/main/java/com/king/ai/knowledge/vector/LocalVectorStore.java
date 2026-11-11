@@ -75,6 +75,12 @@ public class LocalVectorStore implements VectorStore {
      */
     @Override
     public List<VectorHit> search(KnowledgeBase base, float[] query, int topK) {
+        return search(base, query, topK, java.util.Set.of());
+    }
+
+    @Override
+    public List<VectorHit> search(KnowledgeBase base, float[] query, int topK,
+                                  java.util.Set<Long> deniedDocIds) {
         if (query == null || query.length == 0 || topK <= 0) {
             return List.of();
         }
@@ -100,6 +106,10 @@ public class LocalVectorStore implements VectorStore {
                 break;
             }
             for (ChunkVector entity : batch) {
+                if (deniedDocIds != null && !deniedDocIds.isEmpty()
+                        && deniedDocIds.contains(entity.getDocId())) {
+                    continue;
+                }
                 float[] embedding = decode(entity.getEmbedding());
                 if (embedding == null || embedding.length != query.length) {
                     continue;

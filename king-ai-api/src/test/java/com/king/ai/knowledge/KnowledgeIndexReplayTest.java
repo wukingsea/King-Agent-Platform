@@ -16,6 +16,7 @@ import com.king.ai.model.ModelRuntimeService;
 import com.king.ai.model.mapper.SupplierModelMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.List;
@@ -45,7 +46,7 @@ class KnowledgeIndexReplayTest {
                 mock(SupplierModelMapper.class), mock(AgentKnowledgeMapper.class),
                 mock(VectorStore.class), mock(EmbeddingService.class),
                 mock(KnowledgeTextSplitter.class), mock(ModelRuntimeService.class), indexQueue,
-                mock(JdbcTemplate.class), mock(OcrService.class));
+                mock(JdbcTemplate.class), mock(OcrService.class), mock(ObjectProvider.class));
     }
 
     @Test

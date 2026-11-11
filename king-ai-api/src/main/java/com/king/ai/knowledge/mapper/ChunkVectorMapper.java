@@ -15,7 +15,7 @@ public interface ChunkVectorMapper extends BaseMapper<ChunkVector> {
      * Keyset page over one knowledge base's vectors. Only the columns the scorer needs are
      * selected so a large knowledge base never has to be materialised in memory at once.
      */
-    @Select("SELECT chunk_id, embedding FROM king_ai_chunk_vector "
+    @Select("SELECT chunk_id, doc_id, embedding FROM king_ai_chunk_vector "
             + "WHERE knowledge_base_id = #{knowledgeBaseId} AND chunk_id > #{afterChunkId} "
             + "ORDER BY chunk_id LIMIT #{limit}")
     List<ChunkVector> scanBatch(@Param("knowledgeBaseId") Long knowledgeBaseId,

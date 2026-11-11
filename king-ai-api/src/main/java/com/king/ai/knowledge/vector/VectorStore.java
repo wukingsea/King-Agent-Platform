@@ -24,6 +24,17 @@ public interface VectorStore {
     List<VectorHit> search(KnowledgeBase base, float[] query, int topK);
 
     /**
+     * Vector search with document-level ACL pushdown: chunks belonging to
+     * {@code deniedDocIds} must not be returned. Stores that cannot express the
+     * filter natively may ignore it only if they still guarantee exclusion
+     * upstream; callers always re-check ACL after hydration as a safety net.
+     */
+    default List<VectorHit> search(KnowledgeBase base, float[] query, int topK,
+                                   java.util.Set<Long> deniedDocIds) {
+        return search(base, query, topK);
+    }
+
+    /**
      * Readiness probe for the backing store. Local (database-backed) implementations do not need
      * an extra round trip because the database probe already covers them.
      */

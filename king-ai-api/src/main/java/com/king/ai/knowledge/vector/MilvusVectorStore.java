@@ -174,6 +174,12 @@ public class MilvusVectorStore implements VectorStore {
 
     @Override
     public List<VectorHit> search(KnowledgeBase base, float[] query, int topK) {
+        return search(base, query, topK, java.util.Set.of());
+    }
+
+    @Override
+    public List<VectorHit> search(KnowledgeBase base, float[] query, int topK,
+                                  java.util.Set<Long> deniedDocIds) {
         String collection = collectionName(base);
         ObjectNode body = objectMapper.createObjectNode();
         body.put("collectionName", collection);
@@ -187,7 +193,7 @@ public class MilvusVectorStore implements VectorStore {
         ArrayNode outputFields = body.putArray("outputFields");
         outputFields.add("chunk_id");
         outputFields.add("doc_id");
-        body.put("filter", scopeFilter(base));
+        body.put("filter", scopeFilter(base) + deniedFilter(deniedDocIds));
         JsonNode root;
         try {
             root = post("/v2/vectordb/entities/search", body, true);
@@ -390,6 +396,25 @@ public class MilvusVectorStore implements VectorStore {
             throw new VectorStoreException("知识库未配置向量维度");
         }
         return dimension;
+    }
+
+    /**
+     * ACL 下推表达式：仅当拒绝列表足够小时才拼进过滤条件，避免超长 expr。
+     * {@code doc_id} 是建索引时写入的标量字段；用 {@code !=} 链而非 {@code in}
+     * 是为了兼容各版本 Milvus 表达式引擎的操作符集合。
+     */
+    private static String deniedFilter(java.util.Set<Long> deniedDocIds) {
+        if (deniedDocIds == null || deniedDocIds.isEmpty() || deniedDocIds.size() > 256) {
+            return "";
+        }
+        StringBuilder expr = new StringBuilder();
+        for (Long docId : deniedDocIds) {
+            if (docId == null) {
+                continue;
+            }
+            expr.append(" && doc_id != ").append(docId);
+        }
+        return expr.toString();
     }
 
     private static String scopeFilter(KnowledgeBase base) {
