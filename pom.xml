@@ -27,7 +27,7 @@
         <java.version>17</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        <mybatis-plus.version>3.5.18</mybatis-plus.version>
+        <mybatis-plus.version>3.5.18.1</mybatis-plus.version>
         <okhttp.version>4.12.0</okhttp.version>
         <pdfbox.version>3.0.8</pdfbox.version>
         <testcontainers.version>1.19.7</testcontainers.version>
