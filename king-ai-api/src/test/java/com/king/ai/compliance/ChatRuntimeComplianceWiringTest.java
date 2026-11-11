@@ -11,6 +11,8 @@ class ChatRuntimeComplianceWiringTest {
 
     private static final Path RUNTIME = Path.of(
             "src/main/java/com/king/ai/chat/ChatRuntime.java");
+    private static final Path STREAMER = Path.of(
+            "src/main/java/com/king/ai/chat/ChatLlmStreamer.java");
 
     @Test
     void runtimeChecksInputBeforeCreatingEmitter() throws Exception {
@@ -23,7 +25,8 @@ class ChatRuntimeComplianceWiringTest {
 
     @Test
     void runtimeGuardsStreamingContentAndReasoning() throws Exception {
-        String source = Files.readString(RUNTIME);
+        // accept() 由 ChatLlmStreamer 的流式回调执行，flush() 由 ChatRuntime 在轮次收尾执行。
+        String source = Files.readString(RUNTIME) + Files.readString(STREAMER);
 
         assertThat(source).contains("contentGuard.accept(delta)");
         assertThat(source).contains("reasoningGuard.accept(delta)");
@@ -33,7 +36,7 @@ class ChatRuntimeComplianceWiringTest {
 
     @Test
     void runtimePersistsOnlyGuardedText() throws Exception {
-        String source = Files.readString(RUNTIME);
+        String source = Files.readString(RUNTIME) + Files.readString(STREAMER);
 
         assertThat(source).contains("content.append(safe)");
         assertThat(source).doesNotContain("content.append(delta)");

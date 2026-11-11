@@ -29,6 +29,20 @@ public final class Texts {
         return line.length() <= max ? line : line.substring(0, max);
     }
 
+    /**
+     * 截断到指定长度，超出部分以省略号结尾；用于 SSE 事件、审计详情等
+     * 需要保留“确实被截断”语义的展示场景。
+     */
+    public static String cap(String value, int max) {
+        if (value == null) {
+            return "";
+        }
+        if (max <= 0 || value.length() <= max) {
+            return value;
+        }
+        return value.substring(0, max) + "…";
+    }
+
     public static String maskSecret(String secret) {
         if (isBlank(secret)) {
             return "";
