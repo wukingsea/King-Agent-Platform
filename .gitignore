@@ -19,3 +19,5 @@ king-ai-ui/coverage/
 *.sse
 
 .DS_Store
+__pycache__/
+*.pyc
