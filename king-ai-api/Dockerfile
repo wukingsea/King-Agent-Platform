@@ -8,7 +8,7 @@ RUN mvn -B -q -pl king-ai-api -am dependency:go-offline
 COPY king-ai-api/src king-ai-api/src
 RUN mvn -B -q -pl king-ai-api -am package -DskipTests
 
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:25-jre-alpine
 
 # OCR escape hatch: tesseract is only invoked when KING_AI_OCR_ENABLED=true.
 RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-eng tesseract-ocr-data-chi_sim
